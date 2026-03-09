@@ -5,7 +5,7 @@ import (
 
 	"server2/internal/body"
 	"server2/internal/fixed"
-	"server2/internal/fixed3d"
+	"server2/internal/geom"
 	"server2/internal/world"
 )
 
@@ -17,7 +17,7 @@ func main() {
 	b := body.NewDynamicBody(
 		1,
 		fixed.FromInt(1),
-		fixed3d.V3(
+		geom.V3(
 			fixed.Zero,
 			fixed.FromInt(10),
 			fixed.Zero,

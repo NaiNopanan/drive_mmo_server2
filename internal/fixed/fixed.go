@@ -2,6 +2,7 @@ package fixed
 
 import (
 	"fmt"
+	"math/big"
 	"math/bits"
 )
 
@@ -12,181 +13,178 @@ const (
 )
 
 const (
-	Zero Fixed = 0
-	One  Fixed = Fixed(1) << FracBits
-	Half Fixed = One >> 1
+	maxInt64 = int64(^uint64(0) >> 1)
+	minInt64 = -maxInt64 - 1
 )
 
-const oneRaw uint64 = uint64(1) << FracBits
-const maxPositiveAbs uint64 = ^uint64(0) >> 1 // max int64 as uint64
-
-func FromRaw(raw int64) Fixed {
-	return Fixed(raw)
-}
+const (
+	Zero Fixed = 0
+	One  Fixed = 1 << FracBits
+)
 
 func FromInt(v int64) Fixed {
+	if v > (maxInt64 >> FracBits) || v < (minInt64 >> FracBits) {
+		panic("fixed.FromInt overflow")
+	}
 	return Fixed(v << FracBits)
 }
 
-func FromRatio(num, den int64) Fixed {
+func FromFraction(num, den int64) Fixed {
 	if den == 0 {
-		panic("fixed: division by zero in FromRatio")
+		panic("fixed.FromFraction divide by zero")
 	}
-	// Fixed-point division already handles scaling
-	return FromInt(num).Div(FromInt(den))
+
+	// Use big.Int for high-precision constant/config construction
+	n := big.NewInt(num)
+	n.Lsh(n, FracBits)
+
+	d := big.NewInt(den)
+	n.Quo(n, d)
+
+	if !n.IsInt64() {
+		panic("fixed.FromFraction overflow")
+	}
+
+	return Fixed(n.Int64())
+}
+
+func FromRaw(raw int64) Fixed {
+	return Fixed(raw)
 }
 
 func (f Fixed) Raw() int64 {
 	return int64(f)
 }
 
+func (f Fixed) IntFloor() int64 {
+	return int64(f) >> FracBits
+}
+
 func (f Fixed) Add(g Fixed) Fixed {
-	return f + g
+	return Fixed(add64(int64(f), int64(g)))
 }
 
 func (f Fixed) Sub(g Fixed) Fixed {
-	return f - g
+	return Fixed(sub64(int64(f), int64(g)))
 }
 
 func (f Fixed) Neg() Fixed {
+	if int64(f) == minInt64 {
+		panic("fixed.Neg overflow")
+	}
 	return -f
 }
 
 func (f Fixed) Abs() Fixed {
 	if f < 0 {
-		return -f
+		return f.Neg()
 	}
 	return f
 }
 
-func (f Fixed) IsZero() bool {
-	return f == 0
-}
-
-func (f Fixed) Cmp(g Fixed) int {
-	switch {
-	case f < g:
-		return -1
-	case f > g:
-		return 1
-	default:
-		return 0
-	}
-}
-
 func (f Fixed) Mul(g Fixed) Fixed {
-	neg := (f < 0) != (g < 0)
-
-	uf := abs64(int64(f))
-	ug := abs64(int64(g))
-
-	hi, lo := bits.Mul64(uf, ug)
-
-	// ((hi:lo) >> 32)
-	// For Q32.32, the result of 64x64 mul is 128 bit.
-	// (uf * ug) >> 32
-	// Higher 64 bits (hi) and lower 64 bits (lo)
-	// res = (hi << 32) | (lo >> 32)
-	
-	if (hi >> FracBits) != 0 {
-		panic("fixed: multiplication overflow")
-	}
-
-	resAbs := (hi << (64 - FracBits)) | (lo >> FracBits)
-	return applySign(resAbs, neg)
+	return Fixed(mulQ32(int64(f), int64(g)))
 }
 
 func (f Fixed) Div(g Fixed) Fixed {
 	if g == 0 {
-		panic("fixed: division by zero")
+		panic("fixed.Div: division by zero")
 	}
-
-	neg := (f < 0) != (g < 0)
-
-	uf := abs64(int64(f))
-	ug := abs64(int64(g))
-
-	// (uf << 32) / ug
-	// To maintain precision, we shift uf left by 32 bits before dividing.
-	// Since uf is 64-bit, we need bits.Div64 for 128-bit/64-bit division.
 	
-	hi := uf >> (64 - FracBits)
-	lo := uf << FracBits
-
-	q, _ := bits.Div64(hi, lo, ug)
+	neg := (f < 0) != (g < 0)
+	
+	ua := absToUint64(int64(f))
+	ub := absToUint64(int64(g))
+	
+	// (ua << 32) / ub
+	hi := ua >> (64 - FracBits)
+	lo := ua << FracBits
+	
+	q, _ := bits.Div64(hi, lo, ub)
+	
+	// Check overflow for q (it's result of 128/64, could be > 64 bit but applySign will handle int64 limit)
 	return applySign(q, neg)
 }
 
-func Min(a, b Fixed) Fixed {
-	if a < b {
-		return a
+func (f Fixed) Cmp(g Fixed) int {
+	if f < g {
+		return -1
 	}
-	return b
-}
-
-func Max(a, b Fixed) Fixed {
-	if a > b {
-		return a
+	if f > g {
+		return 1
 	}
-	return b
+	return 0
 }
 
 func (f Fixed) String() string {
-	return f.Format(6)
+	u := absToUint64(int64(f))
+	whole := u >> FracBits
+	fracRaw := u & ((uint64(1) << FracBits) - 1)
+
+	// Display 6 positions for debug
+	frac6 := (fracRaw * 1_000_000) >> FracBits
+
+	if f < 0 {
+		return fmt.Sprintf("-%d.%06d", whole, frac6)
+	}
+	return fmt.Sprintf("%d.%06d", whole, frac6)
 }
 
-func (f Fixed) Format(places int) string {
-	raw := int64(f)
-	neg := raw < 0
-	abs := abs64(raw)
+func add64(a, b int64) int64 {
+	r := a + b
+	if ((a ^ r) & (b ^ r)) < 0 {
+		panic("fixed add overflow")
+	}
+	return r
+}
 
-	whole := abs >> FracBits
-	fracRaw := abs & (oneRaw - 1)
+func sub64(a, b int64) int64 {
+	r := a - b
+	if ((a ^ b) & (a ^ r)) < 0 {
+		panic("fixed sub overflow")
+	}
+	return r
+}
 
-	pow10 := uint64(1)
-	for i := 0; i < places; i++ {
-		pow10 *= 10
+func mulQ32(a, b int64) int64 {
+	neg := (a < 0) != (b < 0)
+
+	ua := absToUint64(a)
+	ub := absToUint64(b)
+
+	hi, lo := bits.Mul64(ua, ub)
+
+	// (hi:lo) >> 32
+	if (hi >> 32) != 0 {
+		panic("fixed mul overflow")
 	}
 
-	frac := (fracRaw*pow10 + oneRaw/2) / oneRaw
-	if frac >= pow10 {
-		whole++
-		frac = 0
-	}
+	u := (hi << 32) | (lo >> 32)
 
-	if places == 0 {
-		if neg {
-			return fmt.Sprintf("-%d", whole)
-		}
-		return fmt.Sprintf("%d", whole)
-	}
+	return int64(applySign(u, neg))
+}
 
+func absToUint64(v int64) uint64 {
+	if v >= 0 {
+		return uint64(v)
+	}
+	// two's complement abs that supports MinInt64
+	return uint64(^v) + 1
+}
+
+func applySign(u uint64, neg bool) Fixed {
 	if neg {
-		return fmt.Sprintf("-%d.%0*d", whole, places, frac)
-	}
-	return fmt.Sprintf("%d.%0*d", whole, places, frac)
-}
-
-func abs64(v int64) uint64 {
-	if v < 0 {
-		return uint64(^v) + 1
-	}
-	return uint64(v)
-}
-
-func applySign(abs uint64, neg bool) Fixed {
-	if !neg {
-		if abs > maxPositiveAbs {
-			panic("fixed: positive overflow")
+		if u == (uint64(1) << 63) {
+			return Fixed(minInt64)
 		}
-		return Fixed(int64(abs))
+		if u > uint64(maxInt64) {
+			panic("fixed overflow")
+		}
+		return Fixed(-int64(u))
 	}
 
-	if abs > (uint64(1) << 63) {
-		panic("fixed: negative overflow")
+	if u > uint64(maxInt64) {
+		panic("fixed overflow")
 	}
-	if abs == (uint64(1) << 63) {
-		return Fixed(-1 << 63)
-	}
-	return Fixed(-int64(abs))
+	return Fixed(int64(u))
 }

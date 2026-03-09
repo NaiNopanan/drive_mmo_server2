@@ -5,7 +5,7 @@ import (
 
 	"server2/internal/body"
 	"server2/internal/fixed"
-	"server2/internal/fixed3d"
+	"server2/internal/geom"
 )
 
 func TestWorldStepGravityMovesDown(t *testing.T) {
@@ -14,7 +14,7 @@ func TestWorldStepGravityMovesDown(t *testing.T) {
 	b := body.NewDynamicBody(
 		1,
 		fixed.FromInt(1),
-		fixed3d.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
+		geom.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
 	)
 
 	w.AddBody(b)
@@ -32,7 +32,7 @@ func TestWorldDeterministicChecksum(t *testing.T) {
 		b := body.NewDynamicBody(
 			1,
 			fixed.FromInt(1),
-			fixed3d.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
+			geom.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
 		)
 
 		w.AddBody(b)
@@ -58,7 +58,7 @@ func TestWorldReset(t *testing.T) {
 	b := body.NewDynamicBody(
 		1,
 		fixed.FromInt(1),
-		fixed3d.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
+		geom.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
 	)
 
 	w.AddBody(b)
@@ -70,10 +70,10 @@ func TestWorldReset(t *testing.T) {
 
 	w.Reset()
 
-	if b.Position != fixed3d.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero) {
+	if b.Position != geom.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero) {
 		t.Fatalf("reset position mismatch: got=%v", b.Position)
 	}
-	if b.LinearVelocity != fixed3d.Zero() {
+	if b.LinearVelocity != geom.Zero() {
 		t.Fatalf("reset velocity mismatch: got=%v", b.LinearVelocity)
 	}
 	if w.Tick != 0 {

@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"server2/internal/body"
-	"server2/internal/fixed3d"
+	"server2/internal/geom"
 )
 
 type BodySnapshot struct {
 	ID             uint64
-	Position       fixed3d.Vec3
-	LinearVelocity fixed3d.Vec3
+	Position       geom.Vec3
+	LinearVelocity geom.Vec3
 }
 
 type World struct {
@@ -71,13 +71,13 @@ func (w *World) Step() {
 		}
 
 		// Apply gravity
-		gravityForce := w.Config.Gravity.MulScalar(b.Mass)
+		gravityForce := w.Config.Gravity.Scale(b.Mass)
 		b.ApplyForce(gravityForce)
 
 		// Simple Euler integration
-		accel := b.ForceAccum.MulScalar(b.InvMass)
-		b.LinearVelocity = b.LinearVelocity.Add(accel.MulScalar(dt))
-		b.Position = b.Position.Add(b.LinearVelocity.MulScalar(dt))
+		accel := b.ForceAccum.Scale(b.InvMass)
+		b.LinearVelocity = b.LinearVelocity.Add(accel.Scale(dt))
+		b.Position = b.Position.Add(b.LinearVelocity.Scale(dt))
 
 		b.ClearAccumulators()
 	}
