@@ -69,6 +69,10 @@ func (v Vec3) LengthSq() fixed.Fixed {
 	return v.Dot(v)
 }
 
+func (v Vec3) Length() fixed.Fixed {
+	return v.LengthSq().Sqrt()
+}
+
 func (v Vec3) Normalize() Vec3 {
 	lenSq := v.LengthSq()
 	if lenSq == fixed.Zero {

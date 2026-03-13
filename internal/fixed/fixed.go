@@ -22,6 +22,16 @@ const (
 	One  Fixed = 1 << FracBits
 )
 
+func Clamp(v, min, max Fixed) Fixed {
+	if v.Cmp(min) < 0 {
+		return min
+	}
+	if v.Cmp(max) > 0 {
+		return max
+	}
+	return v
+}
+
 func FromInt(v int64) Fixed {
 	if v > (maxInt64 >> FracBits) || v < (minInt64 >> FracBits) {
 		panic("fixed.FromInt overflow")
