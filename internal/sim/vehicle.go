@@ -126,8 +126,8 @@ func DefaultTuning() VehicleTuning {
 		MaxSuspensionForce:   fixed.FromInt(30000),
 
 		WheelRadius:       fixed.FromFraction(34, 100),
-		DriveForce:        fixed.FromInt(7000),
-		BrakeForce:        fixed.FromInt(9000),
+		DriveForce:        fixed.FromInt(10000), // ↑ จาก 7000
+		BrakeForce:        fixed.FromInt(12000), // ↑ จาก 9000
 		RollingResistance: fixed.FromInt(300),
 		LateralGrip:       fixed.FromInt(2800), // กลาง: ไม่แข็งเกิน ไม่ไถลเกิน
 
@@ -170,9 +170,11 @@ func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
 // NewAWDVehicle creates a vehicle with all-wheel drive — easiest to prototype with.
 func NewAWDVehicle(id uint32, pos geom.Vec3) Vehicle {
 	v := NewVehicle(id, pos)
+	// Default: AWD for prototype (easy to drive, high traction)
 	for i := range v.WheelDefs {
 		v.WheelDefs[i].IsDriven = true
 	}
+
 	return v
 }
 

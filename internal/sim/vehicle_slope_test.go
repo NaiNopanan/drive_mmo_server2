@@ -13,8 +13,8 @@ func testSlopeGround() SlopeGround {
 	return SlopeGround{
 		BaseY: fixed.Zero,
 		Slope: fixed.FromFraction(1, 10), // 0.1 = 8m/80m
-		MinX:  fixed.FromInt(-40), MaxX: fixed.FromInt(40),
-		MinZ:  fixed.FromInt(-40), MaxZ: fixed.FromInt(40),
+		MinX:  fixed.FromInt(-100), MaxX: fixed.FromInt(100),
+		MinZ:  fixed.FromInt(-100), MaxZ: fixed.FromInt(100),
 	}
 }
 

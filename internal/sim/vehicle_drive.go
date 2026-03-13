@@ -25,6 +25,20 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 		steerYaw = steerYaw.Add(w.SteerAngleRad)
 	}
 	fwd, right := HeadingFromYaw(steerYaw)
+
+	// Project fwd/right onto ground plane to avoid "lift" force on slopes
+	// projected = v - (v dot n) * n
+	fwd = fwd.Sub(w.ContactNormal.Scale(fwd.Dot(w.ContactNormal)))
+	right = right.Sub(w.ContactNormal.Scale(right.Dot(w.ContactNormal)))
+
+	// Re-normalize to keep unit vectors
+	if fwd.LengthSq().Cmp(fixed.Zero) > 0 {
+		fwd = fwd.Normalize()
+	}
+	if right.LengthSq().Cmp(fixed.Zero) > 0 {
+		right = right.Normalize()
+	}
+
 	w.WheelForwardWS = fwd
 	w.WheelRightWS = right
 
