@@ -11,11 +11,21 @@ import (
 const TickHz = 60
 
 var (
-	Dt       = fixed.FromFraction(1, TickHz)
-	Accel    = fixed.FromInt(12) // 12 m/s^2
-	Brake    = fixed.FromInt(20) // 20 m/s^2
-	Drag     = fixed.FromInt(4)  // 4 m/s^2
-	MaxSpeed = fixed.FromInt(40) // 40 m/s
+	Dt = fixed.FromFraction(1, TickHz)
+
+	// gravity = -9.8
+	GravityY = fixed.FromFraction(-98, 10)
+
+	// horizontal control
+	MoveAccel = fixed.FromInt(12)
+	MaxSpeed  = fixed.FromInt(40)
+
+	// drag
+	AirDrag    = fixed.FromFraction(1, 2) // 0.5
+	GroundDrag = fixed.FromInt(10)
+
+	// infinite plane at y = 0
+	GroundY = fixed.Zero
 )
 
 type Input struct {
@@ -26,8 +36,10 @@ type Input struct {
 }
 
 type Body struct {
-	Pos geom.Vec3
-	Vel geom.Vec3
+	Pos      geom.Vec3
+	Vel      geom.Vec3
+	Radius   fixed.Fixed
+	OnGround bool
 }
 
 type World struct {
@@ -35,40 +47,105 @@ type World struct {
 	Car  Body
 }
 
+func NewWorld() World {
+	return World{
+		Car: Body{
+			Pos:      geom.V3(fixed.Zero, fixed.FromInt(10), fixed.Zero),
+			Vel:      geom.Zero(),
+			Radius:   fixed.FromInt(1),
+			OnGround: false,
+		},
+	}
+}
+
 func Step(w *World, in Input) {
-	var ax fixed.Fixed
-	var az fixed.Fixed
+	b := &w.Car
+
+	ax, az := inputAcceleration(in)
+
+	// acceleration for this frame
+	acc := geom.V3(
+		ax,
+		GravityY,
+		az,
+	)
+
+	// semi-implicit Euler:
+	// 1. update velocity: vel = vel + acc * dt
+	b.Vel = b.Vel.Add(acc.Scale(Dt))
+
+	// drag on X/Z only
+	applyHorizontalDrag(b, in)
+
+	// clamp X/Z speed
+	b.Vel.X = clampSymmetric(b.Vel.X, MaxSpeed)
+	b.Vel.Z = clampSymmetric(b.Vel.Z, MaxSpeed)
+
+	// 2. update position: pos = pos + vel * dt
+	b.Pos = b.Pos.Add(b.Vel.Scale(Dt))
+
+	// resolve collision against infinite ground plane y=0
+	resolveGroundPlane(b, GroundY)
+
+	w.Tick++
+}
+
+func inputAcceleration(in Input) (fixed.Fixed, fixed.Fixed) {
+	ax := fixed.Zero
+	az := fixed.Zero
 
 	if in.Right != 0 {
-		ax = ax.Add(Accel)
+		ax = ax.Add(MoveAccel)
 	}
 	if in.Left != 0 {
-		ax = ax.Sub(Accel)
+		ax = ax.Sub(MoveAccel)
 	}
 	if in.Throttle != 0 {
-		az = az.Add(Accel)
+		az = az.Add(MoveAccel)
 	}
 	if in.Brake != 0 {
-		az = az.Sub(Brake)
+		az = az.Sub(MoveAccel)
 	}
 
-	w.Car.Vel.X = w.Car.Vel.X.Add(ax.Mul(Dt))
-	w.Car.Vel.Z = w.Car.Vel.Z.Add(az.Mul(Dt))
+	return ax, az
+}
 
-	dragStep := Drag.Mul(Dt)
+func applyHorizontalDrag(b *Body, in Input) {
+	dragPerTick := AirDrag.Mul(Dt)
+	if b.OnGround {
+		dragPerTick = GroundDrag.Mul(Dt)
+	}
 
 	if in.Left == 0 && in.Right == 0 {
-		w.Car.Vel.X = approachZero(w.Car.Vel.X, dragStep)
+		b.Vel.X = approachZero(b.Vel.X, dragPerTick)
 	}
 	if in.Throttle == 0 && in.Brake == 0 {
-		w.Car.Vel.Z = approachZero(w.Car.Vel.Z, dragStep)
+		b.Vel.Z = approachZero(b.Vel.Z, dragPerTick)
+	}
+}
+
+func resolveGroundPlane(b *Body, planeY fixed.Fixed) {
+	contactY := planeY.Add(b.Radius)
+
+	if b.Pos.Y.Cmp(contactY) < 0 {
+		// positional correction (no penetration)
+		b.Pos.Y = contactY
+
+		// kill downward velocity only
+		if b.Vel.Y.Cmp(fixed.Zero) < 0 {
+			b.Vel.Y = fixed.Zero
+		}
+
+		b.OnGround = true
+		return
 	}
 
-	w.Car.Vel.X = clampSymmetric(w.Car.Vel.X, MaxSpeed)
-	w.Car.Vel.Z = clampSymmetric(w.Car.Vel.Z, MaxSpeed)
+	if b.Pos.Y == contactY && b.Vel.Y == fixed.Zero {
+		b.OnGround = true
+		return
+	}
 
-	w.Car.Pos = w.Car.Pos.Add(w.Car.Vel.Scale(Dt))
-	w.Tick++
+	b.OnGround = false
 }
 
 func clampSymmetric(v, limit fixed.Fixed) fixed.Fixed {
@@ -115,6 +192,14 @@ func HashWorld(w World) uint64 {
 		_, _ = h.Write(buf)
 	}
 
+	writeBool := func(v bool) {
+		if v {
+			writeU64(1)
+		} else {
+			writeU64(0)
+		}
+	}
+
 	writeU64(w.Tick)
 
 	writeI64(w.Car.Pos.X.Raw())
@@ -124,6 +209,9 @@ func HashWorld(w World) uint64 {
 	writeI64(w.Car.Vel.X.Raw())
 	writeI64(w.Car.Vel.Y.Raw())
 	writeI64(w.Car.Vel.Z.Raw())
+
+	writeI64(w.Car.Radius.Raw())
+	writeBool(w.Car.OnGround)
 
 	return h.Sum64()
 }

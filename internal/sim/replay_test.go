@@ -4,6 +4,8 @@ import "testing"
 
 func TestReplayIsDeterministic(t *testing.T) {
 	inputs := []Input{
+		{},
+		{},
 		{Throttle: 1},
 		{Throttle: 1},
 		{Throttle: 1, Right: 1},
@@ -16,8 +18,8 @@ func TestReplayIsDeterministic(t *testing.T) {
 		{Throttle: 1, Left: 1},
 	}
 
-	var a World
-	var b World
+	a := NewWorld()
+	b := NewWorld()
 
 	for i := 0; i < 5000; i++ {
 		in := inputs[i%len(inputs)]
@@ -25,12 +27,12 @@ func TestReplayIsDeterministic(t *testing.T) {
 		Step(&b, in)
 	}
 
-	// Direct Comparison
+	// Double check state properties are identical
 	if a != b {
 		t.Fatalf("world mismatch\na=%+v\nb=%+v", a, b)
 	}
 
-	// Hash Comparison
+	// Verify hashes are identical
 	ha := HashWorld(a)
 	hb := HashWorld(b)
 
