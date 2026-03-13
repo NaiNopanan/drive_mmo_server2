@@ -16,6 +16,86 @@ type GroundQuery interface {
 	Raycast(origin geom.Vec3, dir geom.Vec3, maxDist fixed.Fixed) GroundHit
 }
 
+// FlatGround implements GroundQuery for a simple horizontal plane.
+type FlatGround struct {
+	Y                       fixed.Fixed
+	MinX, MaxX, MinZ, MaxZ fixed.Fixed
+}
+
+func (g FlatGround) Raycast(origin geom.Vec3, dir geom.Vec3, maxDist fixed.Fixed) GroundHit {
+	// Only support downward raycasts for suspension/CCD
+	if dir.Y.Cmp(fixed.Zero) >= 0 {
+		return GroundHit{}
+	}
+
+	if origin.Y.Cmp(g.Y) < 0 {
+		return GroundHit{}
+	}
+
+	// Boundary check (exclude if all zero)
+	if g.MinX.Cmp(fixed.Zero) != 0 || g.MaxX.Cmp(fixed.Zero) != 0 || g.MinZ.Cmp(fixed.Zero) != 0 || g.MaxZ.Cmp(fixed.Zero) != 0 {
+		if origin.X.Cmp(g.MinX) < 0 || origin.X.Cmp(g.MaxX) > 0 || origin.Z.Cmp(g.MinZ) < 0 || origin.Z.Cmp(g.MaxZ) > 0 {
+			return GroundHit{}
+		}
+	}
+
+	dist := origin.Y.Sub(g.Y)
+	if dist.Cmp(maxDist) > 0 {
+		return GroundHit{}
+	}
+
+	return GroundHit{
+		Hit:      true,
+		Point:    geom.V3(origin.X, g.Y, origin.Z),
+		Normal:   geom.V3(fixed.Zero, fixed.One, fixed.Zero),
+		Distance: dist,
+	}
+}
+
+// SlopeGround implements GroundQuery for an infinite slope along Z axis.
+type SlopeGround struct {
+	BaseY                  fixed.Fixed
+	Slope                  fixed.Fixed // dy/dz
+	MinX, MaxX, MinZ, MaxZ fixed.Fixed
+}
+
+func (g SlopeGround) Raycast(origin geom.Vec3, dir geom.Vec3, maxDist fixed.Fixed) GroundHit {
+	// Only support downward raycasts
+	if dir.Y.Cmp(fixed.Zero) >= 0 {
+		return GroundHit{}
+	}
+
+	// Boundary check
+	if g.MinX.Cmp(fixed.Zero) != 0 || g.MaxX.Cmp(fixed.Zero) != 0 || g.MinZ.Cmp(fixed.Zero) != 0 || g.MaxZ.Cmp(fixed.Zero) != 0 {
+		if origin.X.Cmp(g.MinX) < 0 || origin.X.Cmp(g.MaxX) > 0 || origin.Z.Cmp(g.MinZ) < 0 || origin.Z.Cmp(g.MaxZ) > 0 {
+			return GroundHit{}
+		}
+	}
+
+	// y = BaseY + Slope * z
+	groundY := g.BaseY.Add(g.Slope.Mul(origin.Z))
+	if origin.Y.Cmp(groundY) < 0 {
+		return GroundHit{}
+	}
+
+	dist := origin.Y.Sub(groundY)
+	if dist.Cmp(maxDist) > 0 {
+		return GroundHit{}
+	}
+
+	// Normal calculation:
+	// Plane eqn: y - Slope*z - BaseY = 0
+	// Vector (0, 1, -Slope)
+	n := geom.V3(fixed.Zero, fixed.One, g.Slope.Neg()).Normalize()
+
+	return GroundHit{
+		Hit:      true,
+		Point:    geom.V3(origin.X, groundY, origin.Z),
+		Normal:   n,
+		Distance: dist,
+	}
+}
+
 // WorldGroundQuery implements GroundQuery using the existing triangle slice.
 type WorldGroundQuery struct {
 	Triangles []geom.Triangle

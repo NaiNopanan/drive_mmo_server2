@@ -254,8 +254,12 @@ func main() {
 	useFlatGround := true
 	_ = useFlatGround
 	world := sim.VehicleWorldDay6{
-		GroundTriangles: sim.GroundFlatSmall(),
-		Vehicles:        spawnGrid(3, 4),
+		Ground: sim.FlatGround{
+			Y:    fixed.Zero,
+			MinX: fixed.FromInt(-50), MaxX: fixed.FromInt(50),
+			MinZ: fixed.FromInt(-50), MaxZ: fixed.FromInt(50),
+		},
+		Vehicles: spawnGrid(3, 4),
 	}
 
 	selected := 0
@@ -277,12 +281,21 @@ func main() {
 		}
 		if rl.IsKeyPressed(rl.KeyOne) {
 			useFlatGround = true
-			world.GroundTriangles = sim.GroundFlatSmall()
+			world.Ground = sim.FlatGround{
+				Y:    fixed.Zero,
+				MinX: fixed.FromInt(-50), MaxX: fixed.FromInt(50),
+				MinZ: fixed.FromInt(-50), MaxZ: fixed.FromInt(50),
+			}
 			world.Vehicles = spawnGrid(3, 4)
 		}
 		if rl.IsKeyPressed(rl.KeyTwo) {
 			useFlatGround = false
-			world.GroundTriangles = sim.GroundSlopeSmall()
+			world.Ground = sim.SlopeGround{
+				BaseY: fixed.Zero,
+				Slope: fixed.FromFraction(2, 10),
+				MinX:  fixed.FromInt(-40), MaxX: fixed.FromInt(40),
+				MinZ:  fixed.FromInt(-40), MaxZ: fixed.FromInt(40),
+			}
 			world.Vehicles = spawnGrid(3, 4)
 		}
 		if rl.IsKeyPressed(rl.KeyTab) {
@@ -330,15 +343,35 @@ func main() {
 		rl.ClearBackground(rl.RayWhite)
 
 		rl.BeginMode3D(camera)
-		rl.DrawGrid(60, 1.0)
-
-		for _, tri := range world.GroundTriangles {
-			a := vecToRL(tri.A)
-			b := vecToRL(tri.B)
-			c := vecToRL(tri.C)
-			rl.DrawLine3D(a, b, rl.Purple)
-			rl.DrawLine3D(b, c, rl.Purple)
-			rl.DrawLine3D(c, a, rl.Purple)
+		// Draw ground based on type
+		switch g := world.Ground.(type) {
+		case sim.FlatGround:
+			// DrawGrid(100, 1.0) = 100 slices * 1.0 spacing = ±50 units, matching physics boundary
+			rl.DrawGrid(100, 1.0)
+			// Draw boundary rectangle in red so it's clearly visible
+			if g.MaxX.Cmp(fixed.Zero) != 0 {
+				minX := fixedToF(g.MinX)
+				maxX := fixedToF(g.MaxX)
+				minZ := fixedToF(g.MinZ)
+				maxZ := fixedToF(g.MaxZ)
+				y := fixedToF(g.Y) + 0.02 // slightly above ground
+				rl.DrawLine3D(rl.NewVector3(minX, y, minZ), rl.NewVector3(maxX, y, minZ), rl.Red)
+				rl.DrawLine3D(rl.NewVector3(maxX, y, minZ), rl.NewVector3(maxX, y, maxZ), rl.Red)
+				rl.DrawLine3D(rl.NewVector3(maxX, y, maxZ), rl.NewVector3(minX, y, maxZ), rl.Red)
+				rl.DrawLine3D(rl.NewVector3(minX, y, maxZ), rl.NewVector3(minX, y, minZ), rl.Red)
+			}
+		case sim.SlopeGround:
+			// draw a simple line for slope
+			rl.DrawLine3D(rl.NewVector3(-50, 0, -50), rl.NewVector3(50, fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(50)))), 50), rl.Purple)
+		case sim.WorldGroundQuery:
+			for _, tri := range g.Triangles {
+				a := vecToRL(tri.A)
+				b := vecToRL(tri.B)
+				c := vecToRL(tri.C)
+				rl.DrawLine3D(a, b, rl.Purple)
+				rl.DrawLine3D(b, c, rl.Purple)
+				rl.DrawLine3D(c, a, rl.Purple)
+			}
 		}
 
 		for i := range world.Vehicles {

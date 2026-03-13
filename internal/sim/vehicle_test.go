@@ -12,7 +12,7 @@ func TestVehicleRestsOnFlatGround(t *testing.T) {
 		NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero)),
 	}
 	w := VehicleWorldDay6{
-		GroundTriangles: GroundFlatSmall(),
+		Ground:   WorldGroundQuery{Triangles: GroundFlatSmall()},
 		Vehicles:        vehicles,
 	}
 
@@ -41,7 +41,7 @@ func TestVehicleAcceleratesForward(t *testing.T) {
 		NewVehicle(1, geom.V3(fixed.Zero, fixed.FromFraction(12, 10), fixed.Zero)),
 	}
 	w := VehicleWorldDay6{
-		GroundTriangles: GroundFlatSmall(),
+		Ground:   WorldGroundQuery{Triangles: GroundFlatSmall()},
 		Vehicles:        vehicles,
 	}
 
@@ -66,7 +66,7 @@ func TestVehicleSteeringChangesYaw(t *testing.T) {
 		NewVehicle(1, geom.V3(fixed.Zero, fixed.FromFraction(12, 10), fixed.Zero)),
 	}
 	w := VehicleWorldDay6{
-		GroundTriangles: GroundFlatSmall(),
+		Ground:   WorldGroundQuery{Triangles: GroundFlatSmall()},
 		Vehicles:        vehicles,
 	}
 
@@ -92,8 +92,8 @@ func TestVehicleReplayDeterministicMany(t *testing.T) {
 	va := spawnGrid(4, 4)
 	vb := spawnGrid(4, 4)
 
-	a := VehicleWorldDay6{GroundTriangles: GroundFlatSmall(), Vehicles: va}
-	b := VehicleWorldDay6{GroundTriangles: GroundFlatSmall(), Vehicles: vb}
+	a := VehicleWorldDay6{Ground: WorldGroundQuery{Triangles: GroundFlatSmall()}, Vehicles: va}
+	b := VehicleWorldDay6{Ground: WorldGroundQuery{Triangles: GroundFlatSmall()}, Vehicles: vb}
 
 	dt := fixed.FromFraction(1, 60)
 	for tick := 0; tick < 300; tick++ {

@@ -121,8 +121,8 @@ func DefaultTuning() VehicleTuning {
 		SuspensionRestLength: fixed.FromFraction(35, 100), // 0.35
 		SuspensionMaxDrop:    fixed.FromFraction(20, 100), // 0.20
 		SuspensionMaxRaise:   fixed.FromFraction(10, 100), // 0.10
-		SuspensionStiffness:  fixed.FromInt(22000),
-		SuspensionDamping:    fixed.FromInt(4000),
+		SuspensionStiffness:  fixed.FromInt(35000),
+		SuspensionDamping:    fixed.FromInt(5000),
 		MaxSuspensionForce:   fixed.FromInt(30000),
 
 		WheelRadius:       fixed.FromFraction(34, 100), // 0.34
