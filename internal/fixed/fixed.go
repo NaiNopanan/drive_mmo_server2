@@ -106,6 +106,26 @@ func (f Fixed) Div(g Fixed) Fixed {
 	return applySign(q, neg)
 }
 
+func (f Fixed) Sqrt() Fixed {
+	if f < 0 {
+		panic("fixed.Sqrt: negative input")
+	}
+	if f == 0 {
+		return Zero
+	}
+
+	// raw(result) = sqrt(raw(input) << 32)
+	x := new(big.Int).SetInt64(int64(f))
+	x.Lsh(x, FracBits)
+
+	z := new(big.Int).Sqrt(x)
+	if !z.IsInt64() {
+		panic("fixed.Sqrt: overflow")
+	}
+
+	return Fixed(z.Int64())
+}
+
 func (f Fixed) Cmp(g Fixed) int {
 	if f < g {
 		return -1

@@ -49,6 +49,37 @@ func (v Vec3) Dot(o Vec3) fixed.Fixed {
 		Add(v.Z.Mul(o.Z))
 }
 
+func (v Vec3) Cross(o Vec3) Vec3 {
+	return Vec3{
+		X: v.Y.Mul(o.Z).Sub(v.Z.Mul(o.Y)),
+		Y: v.Z.Mul(o.X).Sub(v.X.Mul(o.Z)),
+		Z: v.X.Mul(o.Y).Sub(v.Y.Mul(o.X)),
+	}
+}
+
+func (v Vec3) Neg() Vec3 {
+	return Vec3{
+		X: v.X.Neg(),
+		Y: v.Y.Neg(),
+		Z: v.Z.Neg(),
+	}
+}
+
+func (v Vec3) LengthSq() fixed.Fixed {
+	return v.Dot(v)
+}
+
+func (v Vec3) Normalize() Vec3 {
+	lenSq := v.LengthSq()
+	if lenSq == fixed.Zero {
+		return Zero()
+	}
+
+	length := lenSq.Sqrt()
+	invLen := fixed.One.Div(length)
+	return v.Scale(invLen)
+}
+
 func (v Vec3) String() string {
 	return fmt.Sprintf("{%s, %s, %s}", v.X, v.Y, v.Z)
 }

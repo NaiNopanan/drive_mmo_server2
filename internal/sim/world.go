@@ -24,8 +24,8 @@ var (
 	AirDrag    = fixed.FromFraction(1, 2) // 0.5
 	GroundDrag = fixed.FromInt(10)
 
-	// infinite plane at y = 0
-	GroundY = fixed.Zero
+	// walkable slope threshold
+	GroundNormalMinY = fixed.FromFraction(1, 2)
 )
 
 type Input struct {
@@ -42,9 +42,18 @@ type Body struct {
 	OnGround bool
 }
 
+type ContactDebug struct {
+	HasContact bool
+	Point      geom.Vec3
+	Normal     geom.Vec3
+}
+
 type World struct {
 	Tick uint64
 	Car  Body
+
+	GroundTriangles []geom.Triangle
+	LastContact     ContactDebug
 }
 
 func NewWorld() World {
@@ -55,11 +64,37 @@ func NewWorld() World {
 			Radius:   fixed.FromInt(1),
 			OnGround: false,
 		},
+		GroundTriangles: makeFlatGroundTriangles(),
+	}
+}
+
+func makeFlatGroundTriangles() []geom.Triangle {
+	// ±50 keeps dot-product values well within Q32 safe range.
+	// Max dot product: 100 * 100 = 10,000, which is << Q32 max ~2B.
+	min := fixed.FromInt(-50)
+	max := fixed.FromInt(50)
+	y := fixed.Zero
+
+	a := geom.V3(min, y, min)
+	b := geom.V3(max, y, min)
+	c := geom.V3(min, y, max)
+	d := geom.V3(max, y, max)
+
+	return []geom.Triangle{
+		geom.NewTriangle(a, c, b),
+		geom.NewTriangle(c, d, b),
 	}
 }
 
 func Step(w *World, in Input) {
+	if w == nil {
+		return
+	}
 	b := &w.Car
+	wasOnGround := b.OnGround
+
+	b.OnGround = false
+	w.LastContact = ContactDebug{}
 
 	ax, az := inputAcceleration(in)
 
@@ -75,7 +110,7 @@ func Step(w *World, in Input) {
 	b.Vel = b.Vel.Add(acc.Scale(Dt))
 
 	// drag on X/Z only
-	applyHorizontalDrag(b, in)
+	applyHorizontalDrag(b, in, wasOnGround)
 
 	// clamp X/Z speed
 	b.Vel.X = clampSymmetric(b.Vel.X, MaxSpeed)
@@ -84,8 +119,8 @@ func Step(w *World, in Input) {
 	// 2. update position: pos = pos + vel * dt
 	b.Pos = b.Pos.Add(b.Vel.Scale(Dt))
 
-	// resolve collision against infinite ground plane y=0
-	resolveGroundPlane(b, GroundY)
+	// resolve collision against ground triangles
+	resolveGroundTriangles(w, b)
 
 	w.Tick++
 }
@@ -110,9 +145,9 @@ func inputAcceleration(in Input) (fixed.Fixed, fixed.Fixed) {
 	return ax, az
 }
 
-func applyHorizontalDrag(b *Body, in Input) {
+func applyHorizontalDrag(b *Body, in Input, wasOnGround bool) {
 	dragPerTick := AirDrag.Mul(Dt)
-	if b.OnGround {
+	if wasOnGround {
 		dragPerTick = GroundDrag.Mul(Dt)
 	}
 
@@ -124,28 +159,77 @@ func applyHorizontalDrag(b *Body, in Input) {
 	}
 }
 
-func resolveGroundPlane(b *Body, planeY fixed.Fixed) {
-	contactY := planeY.Add(b.Radius)
+func resolveGroundTriangles(w *World, b *Body) {
+	if w == nil || b == nil {
+		return
+	}
+	tris := w.GroundTriangles
+	if len(tris) == 0 {
+		return
+	}
 
-	if b.Pos.Y.Cmp(contactY) < 0 {
-		// positional correction (no penetration)
-		b.Pos.Y = contactY
+	const maxResolveIters = 4
+	const groundingSlop = 65536 // ~1.5e-5 raw bits
 
-		// kill downward velocity only
-		if b.Vel.Y.Cmp(fixed.Zero) < 0 {
-			b.Vel.Y = fixed.Zero
+	wasOnGround := b.OnGround
+	b.OnGround = false
+
+	for iter := 0; iter < maxResolveIters; iter++ {
+		found := false
+		var best TriangleContact
+
+		for i := 0; i < len(tris); i++ {
+			tri := tris[i]
+			c := sphereTriangleContact(b.Pos, b.Radius.Add(fixed.FromRaw(groundingSlop)), tri, i)
+			if !c.Hit {
+				continue
+			}
+
+			if !found ||
+				c.Penetration.Cmp(best.Penetration) > 0 ||
+				(c.Penetration == best.Penetration && c.TriangleIndex < best.TriangleIndex) {
+				best = c
+				found = true
+			}
 		}
 
-		b.OnGround = true
-		return
+		if !found {
+			break
+		}
+
+		// Apply positional correction
+		strict := sphereTriangleContact(b.Pos, b.Radius, tris[best.TriangleIndex], best.TriangleIndex)
+		if strict.Hit && strict.Penetration.Cmp(fixed.Zero) > 0 {
+			b.Pos = b.Pos.Add(strict.Normal.Scale(strict.Penetration))
+		}
+
+		// Velocity response
+		vn := b.Vel.Dot(best.Normal)
+		if vn.Cmp(fixed.Zero) < 0 {
+			b.Vel = b.Vel.Sub(best.Normal.Scale(vn))
+		}
+
+		if best.Normal.Y.Cmp(GroundNormalMinY) >= 0 {
+			b.OnGround = true
+		}
+
+		w.LastContact = ContactDebug{
+			HasContact: true,
+			Point:      best.Point,
+			Normal:     best.Normal,
+		}
 	}
 
-	if b.Pos.Y == contactY && b.Vel.Y == fixed.Zero {
-		b.OnGround = true
-		return
+	if !b.OnGround && wasOnGround {
+		for i := 0; i < len(tris); i++ {
+			tri := tris[i]
+			c := sphereTriangleContact(b.Pos, b.Radius.Add(fixed.FromRaw(groundingSlop)), tri, i)
+			if c.Hit && c.Normal.Y.Cmp(GroundNormalMinY) >= 0 {
+				b.OnGround = true
+				break
+			}
+		}
 	}
-
-	b.OnGround = false
 }
 
 func clampSymmetric(v, limit fixed.Fixed) fixed.Fixed {
