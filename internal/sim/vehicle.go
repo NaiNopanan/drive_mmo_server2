@@ -103,33 +103,40 @@ type Vehicle struct {
 }
 
 func DefaultTuning() VehicleTuning {
-	mass := fixed.FromInt(1200)
-	yawInertia := fixed.FromInt(1600) // ลดจาก 2200 → เลี้ยวได้ง่ายขึ้น
+	mass := fixed.FromInt(800)
+	track := fixed.FromFraction(16, 10)
+	base := fixed.FromFraction(26, 10)
+
+	// inertia = 1/12 * mass * (track^2 + base^2)
+	inertia := mass.Mul(track.Mul(track).Add(base.Mul(base))).Div(fixed.FromInt(12))
+	// Scale inertia to 25% for a balance between authority and stability
+	inertia = inertia.Mul(fixed.FromFraction(25, 100))
 
 	return VehicleTuning{
 		Mass:          mass,
 		InvMass:       fixed.One.Div(mass),
-		YawInertia:    yawInertia,
-		InvYawInertia: fixed.One.Div(yawInertia),
+		YawInertia:    inertia,
+		InvYawInertia: fixed.One.Div(inertia),
 
-		WheelBase:  fixed.FromFraction(26, 10), // 2.6
-		TrackWidth: fixed.FromFraction(16, 10), // 1.6
+		WheelBase:  base,
+		TrackWidth: track,
 
-		MaxSteerAngleRad:   fixed.FromFraction(48, 100), // ~28deg (↑ คืนมา ให้เลี้ยวคมขึ้น)
-		SteerRateRadPerSec: fixed.FromFraction(19, 10),  // ~109deg/s (↑ พวงมาลัวตอบสนองเร็วขึ้น)
+		MaxSteerAngleRad:   fixed.FromFraction(60, 100), // ~34deg
+		SteerRateRadPerSec: fixed.FromFraction(25, 10),  // ~143deg/s
 
 		SuspensionRestLength: fixed.FromFraction(35, 100),
 		SuspensionMaxDrop:    fixed.FromFraction(20, 100),
 		SuspensionMaxRaise:   fixed.FromFraction(10, 100),
-		SuspensionStiffness:  fixed.FromInt(35000),
-		SuspensionDamping:    fixed.FromInt(5000),
+
+		SuspensionStiffness: fixed.FromInt(30000),
+		SuspensionDamping:   fixed.FromInt(5000),
 		MaxSuspensionForce:   fixed.FromInt(30000),
 
 		WheelRadius:       fixed.FromFraction(34, 100),
-		DriveForce:        fixed.FromInt(10000), // ↑ จาก 7000
-		BrakeForce:        fixed.FromInt(12000), // ↑ จาก 9000
-		RollingResistance: fixed.FromInt(300),
-		LateralGrip:       fixed.FromInt(2800), // กลาง: ไม่แข็งเกิน ไม่ไถลเกิน
+		DriveForce:        fixed.FromInt(10000),
+		BrakeForce:        fixed.FromInt(12000),
+		RollingResistance: fixed.FromInt(800),
+		LateralGrip:       fixed.FromInt(10000), // ปรับลงมาใช้ร่วมกับ Smoothing
 
 		MaxSpeed: fixed.FromInt(40),
 	}
@@ -144,6 +151,7 @@ func PrototypeTuning() VehicleTuning {
 
 func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
 	t := DefaultTuning()
+
 	v := Vehicle{
 		ID:        id,
 		Tuning:    t,

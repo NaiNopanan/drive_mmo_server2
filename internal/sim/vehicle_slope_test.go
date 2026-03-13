@@ -117,6 +117,44 @@ func TestSlope_VehicleClimbsAtHalfThrottle(t *testing.T) {
 	}
 }
 
+// TestVehicleClimbsTriangleSlope verifies that the vehicle can climb a slope
+// composed of actual geometric triangles (WorldGroundQuery).
+func TestVehicleClimbsTriangleSlope(t *testing.T) {
+	g := WorldGroundQuery{Triangles: GroundSlopeSmall()}
+	dt := fixed.FromFraction(1, 60)
+
+	// GroundSlopeSmall is -40 to 40 in XZ.
+	// Spawn at Z=-30
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-30)))
+
+	// Settle
+	for i := 0; i < 120; i++ {
+		v.Step(dt, g)
+	}
+
+	startZ := v.Position.Z
+	startY := v.Position.Y
+	t.Logf("Start pos: Z=%v Y=%v OnGround=%v", startZ, startY, v.OnGround)
+
+	// Drive forward for 3 seconds (AWD + 10k force is fast, so 3s is enough)
+	for i := 0; i < 180; i++ {
+		v.Input = VehicleInput{Throttle: fixed.One}
+		v.Step(dt, g)
+	}
+
+	t.Logf("End pos: Z=%v Y=%v OnGround=%v speed=%v",
+		v.Position.Z, v.Position.Y, v.OnGround,
+		geom.V3(v.Velocity.X, fixed.Zero, v.Velocity.Z).Length())
+
+	// Should have climbed
+	if v.Position.Z.Sub(startZ).Cmp(fixed.FromInt(5)) < 0 {
+		t.Errorf("vehicle did not climb triangle slope: deltaZ=%v", v.Position.Z.Sub(startZ))
+	}
+	if v.Position.Y.Cmp(startY) <= 0 {
+		t.Errorf("vehicle Y should increase on triangle slope: startY=%v endY=%v", startY, v.Position.Y)
+	}
+}
+
 // TestSlope_DriveForceExceedsGravityComponent is a pure physics sanity check.
 // Drive force must exceed the gravity component along the slope.
 func TestSlope_DriveForceExceedsGravityComponent(t *testing.T) {
@@ -136,5 +174,83 @@ func TestSlope_DriveForceExceedsGravityComponent(t *testing.T) {
 	if tuning.DriveForce.Cmp(gravityAlongSlope) <= 0 {
 		t.Errorf("drive force %v <= gravity on slope %v: vehicle CANNOT climb",
 			tuning.DriveForce, gravityAlongSlope)
+	}
+}
+
+// TestSlope_SteeringAuthority verifies if the vehicle can turn while on a slope.
+func TestSlope_SteeringAuthority(t *testing.T) {
+	g := testSlopeGround()
+	dt := fixed.FromFraction(1, 60)
+
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+
+	// 1) Settle on slope
+	for i := 0; i < 120; i++ {
+		v.Step(dt, g)
+	}
+
+	// 2) Drive forward for 1 second to gain some speed
+	for i := 0; i < 60; i++ {
+		v.Input = VehicleInput{Throttle: fixed.One}
+		v.Step(dt, g)
+	}
+
+	startYaw := v.Yaw
+
+	// 3) Hold full steering and throttle for 2 seconds
+	for i := 0; i < 120; i++ {
+		v.Input = VehicleInput{Throttle: fixed.One, Steer: fixed.One}
+		v.Step(dt, g)
+	}
+
+	yawDelta := v.Yaw.Sub(startYaw).Abs()
+	t.Logf("Yaw change after 2s steering on slope: %v rad", yawDelta)
+
+	// In 2 seconds at ~10m/s, we expect at least 0.5 rad of turning
+	minExpectedTurn := fixed.FromFraction(5, 10) // 0.5 rad
+	if yawDelta.Cmp(minExpectedTurn) < 0 {
+		t.Errorf("insufficient steering authority on slope: delta=%v expected >= %v",
+			yawDelta, minExpectedTurn)
+	}
+}
+
+// TestSlope_SteeringStability measures yaw velocity jitter during sustained steering on a slope.
+func TestSlope_SteeringStability(t *testing.T) {
+	g := testSlopeGround()
+	dt := fixed.FromFraction(1, 60)
+
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+
+	// 1) Settle on slope
+	for i := 0; i < 120; i++ {
+		v.Step(dt, g)
+	}
+
+	// 2) Drive forward to gain speed
+	for i := 0; i < 60; i++ {
+		v.Input = VehicleInput{Throttle: fixed.One}
+		v.Step(dt, g)
+	}
+
+	// 3) Hold full steering and measure yaw velocity direction changes (jitter)
+	lastYawVel := v.YawVelocity
+	jitterCount := 0
+	for i := 0; i < 120; i++ {
+		v.Input = VehicleInput{Throttle: fixed.One, Steer: fixed.One}
+		v.Step(dt, g)
+
+		// If yaw velocity flips sign between ticks, it's oscillating/jittering
+		if (v.YawVelocity.Cmp(fixed.Zero) > 0 && lastYawVel.Cmp(fixed.Zero) < 0) ||
+			(v.YawVelocity.Cmp(fixed.Zero) < 0 && lastYawVel.Cmp(fixed.Zero) > 0) {
+			jitterCount++
+		}
+		lastYawVel = v.YawVelocity
+	}
+
+	t.Logf("Yaw velocity jitter count over 120 ticks: %v", jitterCount)
+
+	// In a smooth turn, jitter should be near zero (maybe 1-2 for initial kick, but not continuous)
+	if jitterCount > 10 {
+		t.Errorf("excessive steering vibration on slope: jitterCount=%v expected < 10", jitterCount)
 	}
 }

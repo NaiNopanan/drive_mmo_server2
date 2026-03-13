@@ -5,17 +5,30 @@ import (
 	"server2/internal/geom"
 )
 
-func (v *Vehicle) UpdateBasisFromYaw() {
+func (v *Vehicle) UpdateBasis(up geom.Vec3) {
+	// 1) Target Up
+	v.UpWS = up.Normalize()
+
+	// 2) Horizontal heading from Yaw
 	s := fixed.Sin(v.Yaw)
 	c := fixed.Cos(v.Yaw)
+	worldFwd := geom.V3(s, fixed.Zero, c)
 
-	// forward = (sin(yaw), 0, cos(yaw))
-	v.ForwardWS = geom.V3(s, fixed.Zero, c)
+	// 3) Right = Cross(Up, worldFwd)
+	v.RightWS = v.UpWS.Cross(worldFwd)
+	if v.RightWS.LengthSq().Cmp(fixed.Zero) == 0 {
+		// Degenerate (e.g. looking straight up/down)
+		v.RightWS = geom.V3(fixed.One, fixed.Zero, fixed.Zero)
+	} else {
+		v.RightWS = v.RightWS.Normalize()
+	}
 
-	// right = (cos(yaw), 0, -sin(yaw))
-	v.RightWS = geom.V3(c, fixed.Zero, s.Neg())
+	// 4) Forward = Cross(Right, Up)
+	v.ForwardWS = v.RightWS.Cross(v.UpWS).Normalize()
+}
 
-	v.UpWS = geom.V3(fixed.Zero, fixed.One, fixed.Zero)
+func (v *Vehicle) UpdateBasisFromYaw() {
+	v.UpdateBasis(geom.V3(fixed.Zero, fixed.One, fixed.Zero))
 }
 
 func (v *Vehicle) LocalToWorld(local geom.Vec3) geom.Vec3 {

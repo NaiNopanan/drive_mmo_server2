@@ -26,7 +26,7 @@ func (v *Vehicle) Integrate(dt fixed.Fixed, gravity geom.Vec3) {
 	
 	// Apply yaw drag (10% per tick) and snap very small values to zero
 	v.YawVelocity = v.YawVelocity.Mul(fixed.FromFraction(90, 100))
-	yawSnapThreshold := fixed.FromFraction(5, 1000) // 0.005 rad/s
+	yawSnapThreshold := fixed.FromFraction(1, 1000) // 0.001 rad/s
 	if v.YawVelocity.Abs().Cmp(yawSnapThreshold) < 0 {
 		v.YawVelocity = fixed.Zero
 	}

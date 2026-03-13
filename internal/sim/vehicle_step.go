@@ -28,9 +28,13 @@ func (v *Vehicle) collectCurrentForces(dt fixed.Fixed, g GroundQuery) {
 		f := v.computeWheelMotionForces(i)
 		v.TotalForce = v.TotalForce.Add(f)
 
+		// 3D Torque = r x f
 		r := v.Wheels[i].ContactPoint.Sub(v.Position)
-		torque := r.X.Mul(f.Z).Sub(r.Z.Mul(f.X))
-		v.TotalTorqueY = v.TotalTorqueY.Add(torque)
+		torque := r.Cross(f)
+
+		// Project torque onto local basis
+		// We care about rotation around the vehicle's local axes to maintain control on slopes
+		v.TotalTorqueY = v.TotalTorqueY.Add(torque.Dot(v.UpWS))
 	}
 }
 
@@ -39,7 +43,6 @@ func (v *Vehicle) refreshFinalContactState(dt fixed.Fixed, g GroundQuery) {
 }
 
 func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
-	v.UpdateBasisFromYaw()
 	v.UpdateSteering(dt)
 
 	startPose := VehiclePose{
@@ -47,7 +50,7 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 		Yaw:      v.Yaw,
 	}
 
-	// 1) Collect forces from current state
+	// 1) Collect forces from current STABLE basis
 	v.collectCurrentForces(dt, g)
 
 	// 2) Predict end of tick
@@ -66,34 +69,45 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 		v.Velocity = fullVel
 		v.Yaw = fullYaw
 		v.YawVelocity = fullYawVel
+	} else {
+		// 4) Impact! Advance to hit time
+		hitDt := dt.Mul(toi.Time)
+		v.Position, v.Velocity, v.Yaw, v.YawVelocity = v.predictFromCurrentState(hitDt, VehicleGravity)
 
-		v.applyPostStepDamping()
+		// 5) Resolve impact velocity ONLY (wait for next frame or end of tick for basis update)
+		v.resolveGroundImpactVelocity(toi.Normal)
+		v.applyCCDSeparationBias(toi.Normal, toi.Depth)
 
-		v.UpdateBasisFromYaw()
-		v.refreshFinalContactState(dt, g)
-		return
+		// 6) Integrate remaining time with persistent forces
+		remDt := dt.Sub(hitDt)
+		if remDt.Cmp(fixed.Zero) > 0 {
+			v.Position, v.Velocity, v.Yaw, v.YawVelocity = v.predictFromCurrentState(remDt, VehicleGravity)
+		}
 	}
 
-	// 4) Impact! Advance to hit time
-	hitDt := dt.Mul(toi.Time)
-	v.Position, v.Velocity, v.Yaw, v.YawVelocity = v.predictFromCurrentState(hitDt, VehicleGravity)
-
-	// 5) Resolve impact
-	v.resolveGroundImpactVelocity(toi.Normal)
-	v.applyCCDSeparationBias(toi.Normal, toi.Depth)
-	v.UpdateBasisFromYaw()
-
-	// 6) Integrate remaining time
-	remDt := dt.Sub(hitDt)
-	if remDt.Cmp(fixed.Zero) > 0 {
-		v.collectCurrentForces(remDt, g)
-		v.Position, v.Velocity, v.Yaw, v.YawVelocity = v.predictFromCurrentState(remDt, VehicleGravity)
-	}
-
-	// 7) Finalize
+	// 7) Damping
 	v.applyPostStepDamping()
-	v.UpdateBasisFromYaw()
-	v.refreshFinalContactState(dt, g)
+
+	// 8) Final Orientation: Collect average normal from ACTUAL grounded state at the end
+	avgNormal := geom.V3(fixed.Zero, fixed.One, fixed.Zero)
+	v.refreshFinalContactState(dt, g) // This populates final ContactNormal for each wheel
+	
+	if v.GroundedWheels > 0 {
+		sumN := geom.Zero()
+		count := 0
+		for i := range v.Wheels {
+			if v.Wheels[i].InContact {
+				sumN = sumN.Add(v.Wheels[i].ContactNormal)
+				count++
+			}
+		}
+		if count > 0 {
+			avgNormal = sumN.Scale(fixed.FromFraction(1, int64(count))).Normalize()
+		}
+	}
+
+	// Update basis ONCE at the very end to be ready for the NEXT frame's sensors
+	v.UpdateBasis(avgNormal)
 }
 
 // applyPostStepDamping is called once per full physics tick (not per sub-step).

@@ -50,12 +50,11 @@ func (v *Vehicle) predictFromCurrentState(dt fixed.Fixed, gravity geom.Vec3) (ne
 	yawAcc := v.TotalTorqueY.Mul(v.Tuning.InvYawInertia)
 	nextYawVel = v.YawVelocity.Add(yawAcc.Mul(dt))
 
-	// Yaw drag: 20% per tick (multiplicative, independent of substep)
-	// Must be strong enough to overpower lateral torque feedback from moving wheels
-	nextYawVel = nextYawVel.Mul(fixed.FromFraction(80, 100))
+	// Yaw drag: 10% per tick (standardized with Integrate)
+	nextYawVel = nextYawVel.Mul(fixed.FromFraction(90, 100))
 
-	// Snap yaw velocity to zero if very small
-	yawSnap := fixed.FromFraction(5, 1000) // 0.005 rad/s
+	// Snap yaw velocity only if extremely small
+	yawSnap := fixed.FromFraction(1, 1000) // 0.001 rad/s
 	if nextYawVel.Abs().Cmp(yawSnap) < 0 {
 		nextYawVel = fixed.Zero
 	}
@@ -75,10 +74,80 @@ func (v *Vehicle) FindGroundTOI(pose0, pose1 VehiclePose, g GroundQuery) TOIResu
 		return v.findGroundTOISlope(pose0, pose1, gg)
 	case *SlopeGround:
 		return v.findGroundTOISlope(pose0, pose1, *gg)
+	case WorldGroundQuery:
+		return v.findGroundTOIWorld(pose0, pose1, gg)
+	case *WorldGroundQuery:
+		return v.findGroundTOIWorld(pose0, pose1, *gg)
 	default:
-		// Triangles GroundQuery (Default) doesn't support analytic CCD yet
+		// Unknown GroundQuery type
 		return TOIResult{}
 	}
+}
+
+func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuery) TOIResult {
+	bestT := fixed.One
+	bestWheel := -1
+	var bestNormal geom.Vec3
+	var bestDepth fixed.Fixed
+
+	allowedOffset := v.Tuning.WheelRadius.Add(v.minSuspensionLength())
+
+	for i := range v.WheelDefs {
+		a0 := v.wheelAnchorWorldFromPose(i, pose0)
+		a1 := v.wheelAnchorWorldFromPose(i, pose1)
+
+		// 1) Sample ground at start
+		hit0 := sampleGroundAtXZ(g.Triangles, a0.X, a0.Z, a0.Y.Add(fixed.FromInt(5))) // look slightly above
+		allowedY0 := fixed.FromInt(-10000)
+		if hit0.Hit {
+			allowedY0 = hit0.Point.Y.Add(allowedOffset)
+		}
+
+		if hit0.Hit && a0.Y.Cmp(allowedY0) <= 0 {
+			// Already penetrating
+			depth := allowedY0.Sub(a0.Y)
+			return TOIResult{Hit: true, Time: fixed.Zero, Wheel: i, Normal: hit0.Normal, Depth: depth}
+		}
+
+		// 2) Check if end is below ground
+		hit1 := sampleGroundAtXZ(g.Triangles, a1.X, a1.Z, a1.Y.Add(fixed.FromInt(5)))
+		if !hit1.Hit {
+			continue // No ground here at destination
+		}
+		allowedY1 := hit1.Point.Y.Add(allowedOffset)
+
+		if a1.Y.Cmp(allowedY1) < 0 {
+			// Crosses ground!
+			// Iterative search for T (2 iterations is usually enough for fixed-point vehicle physics)
+			t := fixed.Zero
+			low := fixed.Zero
+			high := fixed.One
+
+			for iter := 0; iter < 2; iter++ {
+				mid := low.Add(high).Mul(fixed.FromFraction(5, 10))
+				aMid := a0.Add(a1.Sub(a0).Scale(mid))
+				hitMid := sampleGroundAtXZ(g.Triangles, aMid.X, aMid.Z, aMid.Y.Add(fixed.FromInt(5)))
+
+				if hitMid.Hit && aMid.Y.Cmp(hitMid.Point.Y.Add(allowedOffset)) < 0 {
+					high = mid
+				} else {
+					low = mid
+				}
+			}
+			t = high
+			if t.Cmp(bestT) < 0 {
+				bestT = t
+				bestWheel = i
+				bestNormal = hit1.Normal
+				bestDepth = fixed.Zero // Hit time 0+ has minimal depth
+			}
+		}
+	}
+
+	if bestWheel < 0 {
+		return TOIResult{}
+	}
+	return TOIResult{Hit: true, Time: bestT, Wheel: bestWheel, Normal: bestNormal, Depth: bestDepth}
 }
 
 func (v *Vehicle) findGroundTOIFlat(pose0, pose1 VehiclePose, g FlatGround) TOIResult {

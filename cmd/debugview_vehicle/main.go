@@ -298,6 +298,13 @@ func main() {
 			}
 			world.Vehicles = spawnGrid(3, 4)
 		}
+		if rl.IsKeyPressed(rl.KeyThree) {
+			useFlatGround = false
+			world.Ground = sim.WorldGroundQuery{
+				Triangles: sim.GroundSlopeSmall(),
+			}
+			world.Vehicles = spawnGrid(3, 4)
+		}
 		if rl.IsKeyPressed(rl.KeyTab) {
 			selected++
 			if selected >= len(world.Vehicles) {
@@ -361,16 +368,44 @@ func main() {
 				rl.DrawLine3D(rl.NewVector3(minX, y, maxZ), rl.NewVector3(minX, y, minZ), rl.Red)
 			}
 		case sim.SlopeGround:
-			// draw a simple line for slope
-			rl.DrawLine3D(rl.NewVector3(-50, 0, -50), rl.NewVector3(50, fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(50)))), 50), rl.Purple)
+			// Draw a grid follow the slope
+			minX := fixedToF(g.MinX)
+			maxX := fixedToF(g.MaxX)
+			minZ := fixedToF(g.MinZ)
+			maxZ := fixedToF(g.MaxZ)
+			color := rl.Fade(rl.Purple, 0.4)
+			
+			step := float32(2.0)
+			for x := minX; x <= maxX; x += step {
+				y0 := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(minZ)))))
+				y1 := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(maxZ)))))
+				rl.DrawLine3D(rl.NewVector3(x, y0, minZ), rl.NewVector3(x, y1, maxZ), color)
+			}
+			for z := minZ; z <= maxZ; z += step {
+				y := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(z)))))
+				rl.DrawLine3D(rl.NewVector3(minX, y, z), rl.NewVector3(maxX, y, z), color)
+			}
+			// Border
+			yMin := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(minZ)))))
+			yMax := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(maxZ)))))
+			rl.DrawLine3D(rl.NewVector3(minX, yMin, minZ), rl.NewVector3(maxX, yMin, minZ), rl.Red)
+			rl.DrawLine3D(rl.NewVector3(maxX, yMin, minZ), rl.NewVector3(maxX, yMax, maxZ), rl.Red)
+			rl.DrawLine3D(rl.NewVector3(maxX, yMax, maxZ), rl.NewVector3(minX, yMax, maxZ), rl.Red)
+			rl.DrawLine3D(rl.NewVector3(minX, yMax, maxZ), rl.NewVector3(minX, yMin, minZ), rl.Red)
+
 		case sim.WorldGroundQuery:
 			for _, tri := range g.Triangles {
 				a := vecToRL(tri.A)
 				b := vecToRL(tri.B)
 				c := vecToRL(tri.C)
-				rl.DrawLine3D(a, b, rl.Purple)
-				rl.DrawLine3D(b, c, rl.Purple)
-				rl.DrawLine3D(c, a, rl.Purple)
+				rl.DrawLine3D(a, b, rl.DarkPurple)
+				rl.DrawLine3D(b, c, rl.DarkPurple)
+				rl.DrawLine3D(c, a, rl.DarkPurple)
+				
+				// Draw normal vector for each triangle to see surface better
+				center := rl.NewVector3((a.X+b.X+c.X)/3, (a.Y+b.Y+c.Y)/3, (a.Z+b.Z+c.Z)/3)
+				n := vecToRL(tri.Normal())
+				rl.DrawLine3D(center, rl.NewVector3(center.X+n.X, center.Y+n.Y, center.Z+n.Z), rl.Yellow)
 			}
 		}
 
@@ -397,7 +432,7 @@ func main() {
 				20, int32(150+i*22), 16, rl.DarkGray)
 		}
 
-		rl.DrawText("Controls: arrows=drive, tab=cycle, space=pause, 1/2=ground", 20, 300, 18, rl.DarkBlue)
+		rl.DrawText("Controls: arrows=drive, tab=cycle, space=pause, 1/2/3=ground", 20, 300, 18, rl.DarkBlue)
 		rl.DrawText("Flycam: WASD/QE + JLI/K", 20, 325, 18, rl.DarkBlue)
 
 		rl.EndDrawing()

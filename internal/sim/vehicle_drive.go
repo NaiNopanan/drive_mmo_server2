@@ -13,30 +13,50 @@ func (v *Vehicle) pointVelocityAt(p geom.Vec3) geom.Vec3 {
 	return v.Velocity.Add(angVel)
 }
 
+func (v *Vehicle) projectOntoPlane(vec, normal geom.Vec3) geom.Vec3 {
+	return vec.Sub(normal.Scale(vec.Dot(normal)))
+}
+
+func (v *Vehicle) safeNormalize(vec geom.Vec3) geom.Vec3 {
+	ls := vec.LengthSq()
+	if ls.Cmp(fixed.Zero) == 0 {
+		return geom.Zero()
+	}
+	return vec.Normalize()
+}
+
 func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 	w := &v.Wheels[i]
 	if !w.InContact {
 		return geom.Zero()
 	}
 
-	// basis for this wheel
-	steerYaw := v.Yaw
-	if v.WheelDefs[i].IsFront {
-		steerYaw = steerYaw.Add(w.SteerAngleRad)
-	}
-	fwd, right := HeadingFromYaw(steerYaw)
+	// 1) Calculate raw heading based on body and steering angle
+	// We now rotate the body's horizontal forward/right around the actual ground NORMAL
+	// to ensure steering stays "on the plane" even when heavily banked.
+	yawSin := fixed.Sin(w.SteerAngleRad)
+	yawCos := fixed.Cos(w.SteerAngleRad)
 
-	// Project fwd/right onto ground plane to avoid "lift" force on slopes
-	// projected = v - (v dot n) * n
-	fwd = fwd.Sub(w.ContactNormal.Scale(fwd.Dot(w.ContactNormal)))
-	right = right.Sub(w.ContactNormal.Scale(right.Dot(w.ContactNormal)))
+	// Local basis for steering on this specific ground normal
+	bodyFwd := v.ForwardWS
+	bodyRight := v.RightWS
 
-	// Re-normalize to keep unit vectors
-	if fwd.LengthSq().Cmp(fixed.Zero) > 0 {
-		fwd = fwd.Normalize()
+	// rawFwd/rawRight are now tilted to the surface
+	// steerFwd = cos(angle)*bodyFwd + sin(angle)*bodyRight
+	rawFwd := bodyFwd.Scale(yawCos).Add(bodyRight.Scale(yawSin))
+	// steerRight = cos(angle)*bodyRight - sin(angle)*bodyFwd
+	rawRight := bodyRight.Scale(yawCos).Sub(bodyFwd.Scale(yawSin))
+
+	// Ensure they are strictly projected and normalized on the ground plane
+	fwd := v.safeNormalize(v.projectOntoPlane(rawFwd, w.ContactNormal))
+	right := v.safeNormalize(v.projectOntoPlane(rawRight, w.ContactNormal))
+
+	// Fallback if projection fails (e.g. edge case)
+	if fwd.LengthSq().Cmp(fixed.Zero) == 0 {
+		fwd = rawFwd
 	}
-	if right.LengthSq().Cmp(fixed.Zero) > 0 {
-		right = right.Normalize()
+	if right.LengthSq().Cmp(fixed.Zero) == 0 {
+		right = rawRight
 	}
 
 	w.WheelForwardWS = fwd
@@ -60,11 +80,22 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 		w.BrakeForce = brakeDir.Mul(v.Input.Brake).Mul(v.Tuning.BrakeForce).Neg()
 	}
 
-	// Lateral Force - only apply if above threshold to avoid clamp saturation at rest
-	latThreshold := fixed.FromFraction(1, 100) // 0.01 m/s dead zone
-	if w.LatSpeed.Abs().Cmp(latThreshold) > 0 {
-		w.LateralForce = w.LatSpeed.Mul(v.Tuning.LateralGrip).Neg()
-		// Clamp lat force by load (simplified friction circle)
+	// Lateral Force - smoothed to avoid high-frequency vibration
+	// We use a small slip threshold (e.g. 0.1 m/s) to ramp up the force linearly
+	// instead of snapping to full grip immediately.
+	slipThreshold := fixed.FromFraction(1, 10) // 0.1 m/s
+	if w.LatSpeed.Abs().Cmp(fixed.FromFraction(1, 1000)) > 0 {
+		// Calculate potential force
+		potForce := w.LatSpeed.Mul(v.Tuning.LateralGrip).Neg()
+
+		// Ramp factor: min(1, |LatSpeed| / slipThreshold)
+		ramp := w.LatSpeed.Abs().Div(slipThreshold)
+		if ramp.Cmp(fixed.One) > 0 {
+			ramp = fixed.One
+		}
+		w.LateralForce = potForce.Mul(ramp)
+
+		// Clamp by load
 		maxLat := w.SuspensionForce
 		if w.LateralForce.Abs().Cmp(maxLat) > 0 {
 			if w.LateralForce.Cmp(fixed.Zero) > 0 {

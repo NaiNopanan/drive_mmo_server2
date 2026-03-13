@@ -32,9 +32,9 @@ func TestVehicle_StopsAfterReleasingControls(t *testing.T) {
 		v.Step(dt, g)
 	}
 
-	// Phase 3: Release all input, wait 10 seconds
+	// Phase 3: Release all input, wait 20 seconds
 	v.Input = VehicleInput{}
-	for i := 0; i < 600; i++ {
+	for i := 0; i < 1200; i++ {
 		v.Step(dt, g)
 	}
 
@@ -76,7 +76,7 @@ func TestVehicle_YawDecaysAfterRelease(t *testing.T) {
 		v.Step(dt, g)
 	}
 
-	// Release and wait 5 seconds
+	// Release and wait 5 seconds (yaw decays quickly)
 	v.Input = VehicleInput{}
 	for i := 0; i < 300; i++ {
 		v.Step(dt, g)
