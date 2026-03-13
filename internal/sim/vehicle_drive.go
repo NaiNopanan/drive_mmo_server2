@@ -46,16 +46,21 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 		w.BrakeForce = brakeDir.Mul(v.Input.Brake).Mul(v.Tuning.BrakeForce).Neg()
 	}
 
-	// Lateral Force
-	w.LateralForce = w.LatSpeed.Mul(v.Tuning.LateralGrip).Neg()
-	// Clamp lat force by load (simplified friction circle)
-	maxLat := w.SuspensionForce
-	if w.LateralForce.Abs().Cmp(maxLat) > 0 {
-		if w.LateralForce.Cmp(fixed.Zero) > 0 {
-			w.LateralForce = maxLat
-		} else {
-			w.LateralForce = maxLat.Neg()
+	// Lateral Force - only apply if above threshold to avoid clamp saturation at rest
+	latThreshold := fixed.FromFraction(1, 100) // 0.01 m/s dead zone
+	if w.LatSpeed.Abs().Cmp(latThreshold) > 0 {
+		w.LateralForce = w.LatSpeed.Mul(v.Tuning.LateralGrip).Neg()
+		// Clamp lat force by load (simplified friction circle)
+		maxLat := w.SuspensionForce
+		if w.LateralForce.Abs().Cmp(maxLat) > 0 {
+			if w.LateralForce.Cmp(fixed.Zero) > 0 {
+				w.LateralForce = maxLat
+			} else {
+				w.LateralForce = maxLat.Neg()
+			}
 		}
+	} else {
+		w.LateralForce = fixed.Zero
 	}
 
 	totalLong := w.DriveForce.Add(w.BrakeForce)

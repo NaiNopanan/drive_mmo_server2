@@ -67,6 +67,8 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 		v.Yaw = fullYaw
 		v.YawVelocity = fullYawVel
 
+		v.applyPostStepDamping()
+
 		v.UpdateBasisFromYaw()
 		v.refreshFinalContactState(dt, g)
 		return
@@ -89,8 +91,29 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 	}
 
 	// 7) Finalize
+	v.applyPostStepDamping()
 	v.UpdateBasisFromYaw()
 	v.refreshFinalContactState(dt, g)
+}
+
+// applyPostStepDamping is called once per full physics tick (not per sub-step).
+// It applies:
+// 1) Input-aware yaw stabilization: when not steering, 50% yaw drag breaks
+//    the lateral-torque feedback loop that keeps the car spinning.
+// 2) Light XZ velocity damping (1%/tick): drains residual lateral drift after
+//    releasing controls without freezing slow-moving vehicles.
+func (v *Vehicle) applyPostStepDamping() {
+	// Yaw stabilization when not actively steering
+	if v.Input.Steer.Abs().Cmp(fixed.FromFraction(1, 100)) < 0 {
+		v.YawVelocity = v.YawVelocity.Mul(fixed.FromFraction(50, 100))
+		if v.YawVelocity.Abs().Cmp(fixed.FromFraction(5, 1000)) < 0 {
+			v.YawVelocity = fixed.Zero
+		}
+	}
+
+	// XZ velocity damping - applied once per tick so it doesn't compound with sub-stepping
+	v.Velocity.X = v.Velocity.X.Mul(fixed.FromFraction(99, 100)) // 1% per tick
+	v.Velocity.Z = v.Velocity.Z.Mul(fixed.FromFraction(99, 100))
 }
 
 type VehicleWorldDay6 struct {

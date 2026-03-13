@@ -49,8 +49,17 @@ func (v *Vehicle) predictFromCurrentState(dt fixed.Fixed, gravity geom.Vec3) (ne
 
 	yawAcc := v.TotalTorqueY.Mul(v.Tuning.InvYawInertia)
 	nextYawVel = v.YawVelocity.Add(yawAcc.Mul(dt))
-	// Apply drag to yaw to stop rotation eventually
-	nextYawVel = nextYawVel.Mul(fixed.FromFraction(95, 100))
+
+	// Yaw drag: 20% per tick (multiplicative, independent of substep)
+	// Must be strong enough to overpower lateral torque feedback from moving wheels
+	nextYawVel = nextYawVel.Mul(fixed.FromFraction(80, 100))
+
+	// Snap yaw velocity to zero if very small
+	yawSnap := fixed.FromFraction(5, 1000) // 0.005 rad/s
+	if nextYawVel.Abs().Cmp(yawSnap) < 0 {
+		nextYawVel = fixed.Zero
+	}
+
 	nextYaw = v.Yaw.Add(nextYawVel.Mul(dt))
 
 	return
