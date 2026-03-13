@@ -110,10 +110,6 @@ func (v *Vehicle) applyPostStepDamping() {
 			v.YawVelocity = fixed.Zero
 		}
 	}
-
-	// XZ velocity damping - applied once per tick so it doesn't compound with sub-stepping
-	v.Velocity.X = v.Velocity.X.Mul(fixed.FromFraction(99, 100)) // 1% per tick
-	v.Velocity.Z = v.Velocity.Z.Mul(fixed.FromFraction(99, 100))
 }
 
 type VehicleWorldDay6 struct {

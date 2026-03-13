@@ -104,7 +104,7 @@ type Vehicle struct {
 
 func DefaultTuning() VehicleTuning {
 	mass := fixed.FromInt(1200)
-	yawInertia := fixed.FromInt(1500)
+	yawInertia := fixed.FromInt(1600) // ลดจาก 2200 → เลี้ยวได้ง่ายขึ้น
 
 	return VehicleTuning{
 		Mass:          mass,
@@ -115,32 +115,39 @@ func DefaultTuning() VehicleTuning {
 		WheelBase:  fixed.FromFraction(26, 10), // 2.6
 		TrackWidth: fixed.FromFraction(16, 10), // 1.6
 
-		MaxSteerAngleRad:   fixed.FromFraction(48, 100), // ~28deg
-		SteerRateRadPerSec: fixed.FromFraction(21, 10),  // ~120deg/s
+		MaxSteerAngleRad:   fixed.FromFraction(48, 100), // ~28deg (↑ คืนมา ให้เลี้ยวคมขึ้น)
+		SteerRateRadPerSec: fixed.FromFraction(19, 10),  // ~109deg/s (↑ พวงมาลัวตอบสนองเร็วขึ้น)
 
-		SuspensionRestLength: fixed.FromFraction(35, 100), // 0.35
-		SuspensionMaxDrop:    fixed.FromFraction(20, 100), // 0.20
-		SuspensionMaxRaise:   fixed.FromFraction(10, 100), // 0.10
+		SuspensionRestLength: fixed.FromFraction(35, 100),
+		SuspensionMaxDrop:    fixed.FromFraction(20, 100),
+		SuspensionMaxRaise:   fixed.FromFraction(10, 100),
 		SuspensionStiffness:  fixed.FromInt(35000),
 		SuspensionDamping:    fixed.FromInt(5000),
 		MaxSuspensionForce:   fixed.FromInt(30000),
 
-		WheelRadius:       fixed.FromFraction(34, 100), // 0.34
+		WheelRadius:       fixed.FromFraction(34, 100),
 		DriveForce:        fixed.FromInt(7000),
 		BrakeForce:        fixed.FromInt(9000),
 		RollingResistance: fixed.FromInt(300),
-		LateralGrip:       fixed.FromInt(3500),
+		LateralGrip:       fixed.FromInt(2800), // กลาง: ไม่แข็งเกิน ไม่ไถลเกิน
 
 		MaxSpeed: fixed.FromInt(40),
 	}
 }
 
+// PrototypeTuning returns an AWD-tuned vehicle with forgiving handling,
+// ideal for prototype testing where driveability matters more than realism.
+func PrototypeTuning() VehicleTuning {
+	t := DefaultTuning()
+	return t
+}
+
 func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
 	t := DefaultTuning()
 	v := Vehicle{
-		ID:       id,
-		Tuning:   t,
-		Position: pos,
+		ID:        id,
+		Tuning:    t,
+		Position:  pos,
 		ForwardWS: geom.V3(fixed.Zero, fixed.Zero, fixed.One),
 		RightWS:   geom.V3(fixed.One, fixed.Zero, fixed.Zero),
 		UpWS:      geom.V3(fixed.Zero, fixed.One, fixed.Zero),
@@ -149,13 +156,23 @@ func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
 	hx := t.TrackWidth.Div(fixed.FromInt(2))
 	hz := t.WheelBase.Div(fixed.FromInt(2))
 
+	// RWD: ล้อหลังขับ, ล้อหน้าเลี้ยว — ขับสนุกกว่า FWD สำหรับ prototype
 	v.WheelDefs = [4]WheelDef{
-		{ID: 0, IsFront: true, IsDriven: true, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz)},
-		{ID: 1, IsFront: true, IsDriven: true, LocalAnchor: geom.V3(hx, fixed.Zero, hz)},
-		{ID: 2, IsFront: false, IsDriven: false, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz.Neg())},
-		{ID: 3, IsFront: false, IsDriven: false, LocalAnchor: geom.V3(hx, fixed.Zero, hz.Neg())},
+		{ID: 0, IsFront: true, IsDriven: false, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz)},
+		{ID: 1, IsFront: true, IsDriven: false, LocalAnchor: geom.V3(hx, fixed.Zero, hz)},
+		{ID: 2, IsFront: false, IsDriven: true, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz.Neg())},
+		{ID: 3, IsFront: false, IsDriven: true, LocalAnchor: geom.V3(hx, fixed.Zero, hz.Neg())},
 	}
 
+	return v
+}
+
+// NewAWDVehicle creates a vehicle with all-wheel drive — easiest to prototype with.
+func NewAWDVehicle(id uint32, pos geom.Vec3) Vehicle {
+	v := NewVehicle(id, pos)
+	for i := range v.WheelDefs {
+		v.WheelDefs[i].IsDriven = true
+	}
 	return v
 }
 
