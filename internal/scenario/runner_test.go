@@ -721,6 +721,91 @@ func TestRigidSphereHighSpeedThinWallProjectileMeshCCDScenarioDoesNotTunnel(t *t
 	}
 }
 
+func TestRigidBoxHighSpeedThinWallProjectileCCDScenarioDoesNotTunnel(t *testing.T) {
+	definition := scenario.NewRigidBoxHighSpeedThinWallProjectileCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected CCD box thin-wall projectile scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverTouchedGround {
+		t.Fatalf("expected CCD box projectile to touch the thin wall")
+	}
+	if runner.State.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected CCD box projectile to stay before the thin wall exit, got x=%v", runner.State.RigidBox.Motion.Position.X)
+	}
+}
+
+func TestRigidBoxRotatingHighSpeedThinWallProjectileCCDScenarioDoesNotTunnel(t *testing.T) {
+	definition := scenario.NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected rotating CCD box thin-wall projectile scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverTouchedGround {
+		t.Fatalf("expected rotating CCD box projectile to touch the thin wall")
+	}
+	if runner.State.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected rotating CCD box projectile to stay before the thin wall exit, got x=%v", runner.State.RigidBox.Motion.Position.X)
+	}
+	if runner.State.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+		t.Fatalf("expected rotating CCD box projectile to retain angular velocity")
+	}
+}
+
+func TestRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenarioDoesNotTunnel(t *testing.T) {
+	definition := scenario.NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected rotating OBB CCD box thin-wall projectile scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverTouchedGround {
+		t.Fatalf("expected rotating OBB CCD box projectile to touch the thin wall")
+	}
+	if runner.State.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected rotating OBB CCD box projectile to stay before the thin wall exit, got x=%v", runner.State.RigidBox.Motion.Position.X)
+	}
+	if runner.State.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+		t.Fatalf("expected rotating OBB CCD box projectile to retain angular velocity")
+	}
+}
+
+func TestRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenarioDoesNotTunnel(t *testing.T) {
+	definition := scenario.NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected rotating OBB mesh CCD box thin-wall projectile scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverTouchedGround {
+		t.Fatalf("expected rotating OBB mesh CCD box projectile to touch the thin wall")
+	}
+	if runner.State.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected rotating OBB mesh CCD box projectile to stay before the thin wall exit, got x=%v", runner.State.RigidBox.Motion.Position.X)
+	}
+	if runner.State.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+		t.Fatalf("expected rotating OBB mesh CCD box projectile to retain angular velocity")
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

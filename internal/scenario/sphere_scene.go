@@ -38,6 +38,10 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewRigidSphereHighSpeedThinWallProjectileScenario(),
 		NewRigidSphereHighSpeedThinWallProjectileCCDScenario(),
 		NewRigidSphereHighSpeedThinWallProjectileMeshCCDScenario(),
+		NewRigidBoxHighSpeedThinWallProjectileCCDScenario(),
+		NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario(),
+		NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario(),
+		NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario(),
 	}
 }
 
@@ -2314,6 +2318,241 @@ func NewRigidSphereHighSpeedThinWallProjectileMeshCCDScenario() ScenarioDefiniti
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "Mesh CCD projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidBoxHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Box High Speed Thin Wall Projectile CCD",
+		Description: "A non-rotating rigid box launches at very high speed into a thin wall slab and uses box CCD to prevent tunneling.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			box := physics.NewRigidBoxBody3D(
+				fixed.One,
+				geometry.NewVector3(fixed.FromFraction(1, 2), fixed.FromFraction(1, 2), fixed.FromFraction(1, 2)),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			box.Restitution = fixed.FromFraction(1, 5)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			wall := geometry.NewAxisAlignedBoundingBox(
+				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
+				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
+			)
+
+			return SceneState{
+				RigidBox:       box,
+				GroundTriangles: makeThinWallSlabTriangles(),
+				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+			}
+		},
+		Step: StepRigidBoxHighSpeedThinWallProjectileCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "CCD box projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "CCD box projectile still tunneled through the thin wall.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "CCD box projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Box Rotating High Speed Thin Wall Projectile CCD",
+		Description: "A rotating rigid box launches at very high speed into a thin wall slab and uses the current box CCD path as a rotation stress test.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			box := physics.NewRigidBoxBody3D(
+				fixed.One,
+				geometry.NewVector3(fixed.FromFraction(1, 2), fixed.FromFraction(1, 2), fixed.FromFraction(1, 2)),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			box.Restitution = fixed.FromFraction(1, 5)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.Orientation = physics.NewQuaternionFromEulerXYZ(
+				fixed.FromFraction(1, 5),
+				fixed.FromFraction(3, 20),
+				fixed.FromFraction(1, 4),
+			)
+			box.AngularVelocity = geometry.NewVector3(
+				fixed.FromInt(6),
+				fixed.FromInt(4),
+				fixed.FromInt(5),
+			)
+			wall := geometry.NewAxisAlignedBoundingBox(
+				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
+				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
+			)
+
+			return SceneState{
+				RigidBox:       box,
+				GroundTriangles: makeThinWallSlabTriangles(),
+				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+			}
+		},
+		Step: StepRigidBoxRotatingHighSpeedThinWallProjectileCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating CCD box projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating CCD box projectile tunneled through the thin wall.",
+				}
+			}
+			if state.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating CCD box projectile lost all angular motion unexpectedly.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Rotating CCD box projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Box Rotating High Speed Thin Wall Projectile OBB CCD",
+		Description: "A rotating rigid box launches at very high speed into a thin wall slab and uses a rotating OBB swept test against the wall.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			box := physics.NewRigidBoxBody3D(
+				fixed.One,
+				geometry.NewVector3(fixed.FromFraction(1, 2), fixed.FromFraction(1, 2), fixed.FromFraction(1, 2)),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			box.Restitution = fixed.FromFraction(1, 5)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.Orientation = physics.NewQuaternionFromEulerXYZ(
+				fixed.FromFraction(1, 5),
+				fixed.FromFraction(3, 20),
+				fixed.FromFraction(1, 4),
+			)
+			box.AngularVelocity = geometry.NewVector3(
+				fixed.FromInt(6),
+				fixed.FromInt(4),
+				fixed.FromInt(5),
+			)
+			wall := geometry.NewAxisAlignedBoundingBox(
+				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
+				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
+			)
+
+			return SceneState{
+				RigidBox:       box,
+				GroundTriangles: makeThinWallSlabTriangles(),
+				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+			}
+		},
+		Step: StepRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB CCD box projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB CCD box projectile tunneled through the thin wall.",
+				}
+			}
+			if state.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB CCD box projectile lost all angular motion unexpectedly.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Rotating OBB CCD box projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Box Rotating High Speed Thin Wall Projectile OBB Mesh CCD",
+		Description: "A rotating rigid box launches at very high speed into a thin wall slab and uses a rotating OBB swept test directly against the triangle mesh.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			box := physics.NewRigidBoxBody3D(
+				fixed.One,
+				geometry.NewVector3(fixed.FromFraction(1, 2), fixed.FromFraction(1, 2), fixed.FromFraction(1, 2)),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			box.Restitution = fixed.FromFraction(1, 5)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.Orientation = physics.NewQuaternionFromEulerXYZ(
+				fixed.FromFraction(1, 5),
+				fixed.FromFraction(3, 20),
+				fixed.FromFraction(1, 4),
+			)
+			box.AngularVelocity = geometry.NewVector3(
+				fixed.FromInt(6),
+				fixed.FromInt(4),
+				fixed.FromInt(5),
+			)
+
+			return SceneState{
+				RigidBox:       box,
+				GroundTriangles: makeThinWallSlabTriangles(),
+			}
+		},
+		Step: StepRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB mesh CCD box projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB mesh CCD box projectile tunneled through the thin wall.",
+				}
+			}
+			if state.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rotating OBB mesh CCD box projectile lost all angular motion unexpectedly.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Rotating OBB mesh CCD box projectile stayed on the impact side of the thin wall.",
 			}
 		},
 	}

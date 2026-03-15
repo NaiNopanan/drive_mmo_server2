@@ -8,6 +8,16 @@ import (
 	"server2/internal/physics"
 )
 
+func integrateScenarioRigidBoxOrientation(orientation physics.Quaternion, angularVelocity geometry.Vector3, dt fixed.Fixed) physics.Quaternion {
+	omega := physics.Quaternion{
+		X: angularVelocity.X,
+		Y: angularVelocity.Y,
+		Z: angularVelocity.Z,
+	}
+	qDot := omega.Mul(orientation).Scale(fixed.FromFraction(1, 2))
+	return orientation.Add(qDot.Scale(dt)).Normalize()
+}
+
 type broadphaseCellKey struct {
 	X int64
 	Y int64
@@ -358,6 +368,138 @@ func StepRigidSphereHighSpeedThinWallProjectileMeshCCDScene(state *SceneState) {
 
 	remainingFraction := fixed.One.Sub(contact.TimeOfImpact)
 	body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep.Mul(remainingFraction)))
+	state.LastContact = physics.SphereTriangleContact{
+		Hit:         true,
+		Point:       contact.ContactPoint,
+		Normal:      contact.Normal,
+		Penetration: fixed.Zero,
+	}
+}
+
+func StepRigidBoxHighSpeedThinWallProjectileCCDScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	body := &state.RigidBox
+	contact := physics.SweepAxisAlignedBoxAxisAlignedBoundingBox(
+		body.Motion.Position,
+		body.Motion.Velocity,
+		body.HalfExtents,
+		physics.DefaultTimeStep,
+		state.GroundBoxes[0],
+	)
+	if !contact.Hit {
+		body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep))
+		return
+	}
+
+	state.EverTouchedGround = true
+	body.Motion.Position = contact.Position
+	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		body.Motion.Velocity = body.Motion.Velocity.Sub(contact.Normal.Scale(normalVelocity.Mul(fixed.One.Add(body.Restitution))))
+	}
+
+	remainingFraction := fixed.One.Sub(contact.TimeOfImpact)
+	body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep.Mul(remainingFraction)))
+	state.LastContact = physics.SphereTriangleContact{
+		Hit:         true,
+		Point:       contact.ContactPoint,
+		Normal:      contact.Normal,
+		Penetration: fixed.Zero,
+	}
+}
+
+func StepRigidBoxRotatingHighSpeedThinWallProjectileCCDScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	body := &state.RigidBox
+	startPosition := body.Motion.Position
+	startVelocity := body.Motion.Velocity
+
+	physics.AdvanceRigidBoxBody3D(body, physics.DefaultTimeStep, geometry.ZeroVector3())
+
+	contact := physics.SweepAxisAlignedBoxAxisAlignedBoundingBox(
+		startPosition,
+		startVelocity,
+		body.HalfExtents,
+		physics.DefaultTimeStep,
+		state.GroundBoxes[0],
+	)
+	if !contact.Hit {
+		return
+	}
+
+	state.EverTouchedGround = true
+	body.Motion.Position = contact.Position
+	normalVelocity := startVelocity.Dot(contact.Normal)
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		body.Motion.Velocity = startVelocity.Sub(contact.Normal.Scale(normalVelocity.Mul(fixed.One.Add(body.Restitution))))
+	}
+
+	remainingFraction := fixed.One.Sub(contact.TimeOfImpact)
+	body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep.Mul(remainingFraction)))
+	state.LastContact = physics.SphereTriangleContact{
+		Hit:         true,
+		Point:       contact.ContactPoint,
+		Normal:      contact.Normal,
+		Penetration: fixed.Zero,
+	}
+}
+
+func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	body := &state.RigidBox
+	contact := physics.SweepRotatingOrientedBoxAxisAlignedBoundingBox(*body, physics.DefaultTimeStep, state.GroundBoxes[0])
+	if !contact.Hit {
+		physics.AdvanceRigidBoxBody3D(body, physics.DefaultTimeStep, geometry.ZeroVector3())
+		return
+	}
+
+	state.EverTouchedGround = true
+	body.Motion.Position = contact.Position
+	body.Orientation = contact.Orientation
+	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		body.Motion.Velocity = body.Motion.Velocity.Sub(contact.Normal.Scale(normalVelocity.Mul(fixed.One.Add(body.Restitution))))
+	}
+	state.LastContact = physics.SphereTriangleContact{
+		Hit:         true,
+		Point:       contact.ContactPoint,
+		Normal:      contact.Normal,
+		Penetration: fixed.Zero,
+	}
+}
+
+func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	body := &state.RigidBox
+	contact := physics.SweepRotatingOrientedBoxTriangleMesh(*body, physics.DefaultTimeStep, state.GroundTriangles)
+	if !contact.Hit {
+		physics.AdvanceRigidBoxBody3D(body, physics.DefaultTimeStep, geometry.ZeroVector3())
+		return
+	}
+
+	state.EverTouchedGround = true
+	body.Motion.Position = contact.Position
+	body.Orientation = contact.Orientation
+	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		body.Motion.Velocity = body.Motion.Velocity.Sub(contact.Normal.Scale(normalVelocity.Mul(fixed.One.Add(body.Restitution))))
+	}
 	state.LastContact = physics.SphereTriangleContact{
 		Hit:         true,
 		Point:       contact.ContactPoint,
