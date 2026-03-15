@@ -615,6 +615,33 @@ func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenarioReducesCan
 	}
 }
 
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenarioIsDeterministic(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario()
+	first := scenario.NewScenarioRunner(definition)
+	second := scenario.NewScenarioRunner(definition)
+
+	for !first.Finished || !second.Finished {
+		first.Step()
+		second.Step()
+
+		if !reflect.DeepEqual(first.State, second.State) {
+			t.Fatalf("optimized scene state mismatch:\nfirst=%#v\nsecond=%#v", first.State, second.State)
+		}
+		if first.Tick != second.Tick {
+			t.Fatalf("optimized scene tick mismatch: %d != %d", first.Tick, second.Tick)
+		}
+		if first.Finished != second.Finished {
+			t.Fatalf("optimized scene finished flag mismatch: %v != %v", first.Finished, second.Finished)
+		}
+		if !reflect.DeepEqual(first.LastResult, second.LastResult) {
+			t.Fatalf("optimized scene result mismatch:\nfirst=%#v\nsecond=%#v", first.LastResult, second.LastResult)
+		}
+		if scenario.HashSceneState(first.State) != scenario.HashSceneState(second.State) {
+			t.Fatalf("optimized scene hash mismatch: %016x != %016x", scenario.HashSceneState(first.State), scenario.HashSceneState(second.State))
+		}
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

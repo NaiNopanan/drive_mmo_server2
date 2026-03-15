@@ -1,6 +1,8 @@
 package scenario
 
 import (
+	"sort"
+
 	"server2/internal/fixed"
 	"server2/internal/geometry"
 	"server2/internal/physics"
@@ -100,8 +102,23 @@ func buildMixedRigidBroadphasePairs(spheres []physics.RigidSphereBody3D, boxes [
 	sphereSphereSeen := make(map[uint64]struct{})
 	boxBoxSeen := make(map[uint64]struct{})
 	sphereBoxSeen := make(map[uint64]struct{})
+	keys := make([]broadphaseCellKey, 0, len(buckets))
 
-	for key, bucket := range buckets {
+	for key := range buckets {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].X != keys[j].X {
+			return keys[i].X < keys[j].X
+		}
+		if keys[i].Y != keys[j].Y {
+			return keys[i].Y < keys[j].Y
+		}
+		return keys[i].Z < keys[j].Z
+	})
+
+	for _, key := range keys {
+		bucket := buckets[key]
 		min := geometry.NewVector3(
 			cellSize.Mul(fixed.FromInt(key.X)),
 			cellSize.Mul(fixed.FromInt(key.Y)),
