@@ -589,6 +589,32 @@ func TestHundredRigidSpheresAndHundredRigidBoxesInBoxScenarioStaysContained(t *t
 	}
 }
 
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenarioReducesCandidates(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 100 || len(runner.State.RigidBoxes) != 100 {
+		t.Fatalf("expected 100 rigid spheres and 100 rigid boxes at setup, got spheres=%d boxes=%d", len(runner.State.RigidSpheres), len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected optimized dense mixed rigid-body box scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if runner.State.SphereSphereCandidateCount >= 4950 {
+		t.Fatalf("expected broadphase to reduce sphere-sphere candidates, got %d", runner.State.SphereSphereCandidateCount)
+	}
+	if runner.State.BoxBoxCandidateCount >= 4950 {
+		t.Fatalf("expected broadphase to reduce box-box candidates, got %d", runner.State.BoxBoxCandidateCount)
+	}
+	if runner.State.SphereBoxCandidateCount >= 10000 {
+		t.Fatalf("expected broadphase to reduce sphere-box candidates, got %d", runner.State.SphereBoxCandidateCount)
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

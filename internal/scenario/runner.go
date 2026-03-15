@@ -62,6 +62,13 @@ type SceneState struct {
 	RigidBoxBounceDetectedSet          []bool
 	RigidBoxPeakBounceHeights          []fixed.Fixed
 	RigidBoxRotationChangedSet         []bool
+	BroadphaseCellCount                int
+	SphereSphereCandidateCount         int
+	BoxBoxCandidateCount               int
+	SphereBoxCandidateCount            int
+	SphereSphereHitCount               int
+	BoxBoxHitCount                     int
+	SphereBoxHitCount                  int
 }
 
 type ScenarioDefinition struct {

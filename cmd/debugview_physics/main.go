@@ -415,7 +415,8 @@ func shouldDrawObjectLabels(definition scenario.ScenarioDefinition) bool {
 		definition.Name != "Hundred Boxes In Box" &&
 		definition.Name != "Hundred Rigid Boxes In Box Angle" &&
 		definition.Name != "Fifty Rigid Spheres And Fifty Rigid Boxes In Box" &&
-		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box"
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized"
 }
 
 func sceneSpheres(state scenario.SceneState) []physics.SphereBody {
@@ -645,8 +646,12 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 		grounded = spheres[0].Grounded
 	}
 
-	rl.DrawRectangle(18, 18, 560, 320, rl.Fade(rl.RayWhite, 0.92))
-	rl.DrawRectangleLinesEx(rl.NewRectangle(18, 18, 560, 320), 2, rl.DarkGray)
+	overlayHeight := float32(320)
+	if state.BroadphaseCellCount > 0 || state.SphereSphereCandidateCount > 0 || state.BoxBoxCandidateCount > 0 || state.SphereBoxCandidateCount > 0 {
+		overlayHeight = 404
+	}
+	rl.DrawRectangle(18, 18, 560, int32(overlayHeight), rl.Fade(rl.RayWhite, 0.92))
+	rl.DrawRectangleLinesEx(rl.NewRectangle(18, 18, 560, overlayHeight), 2, rl.DarkGray)
 
 	rl.DrawText(definition.Name, 30, 30, 28, rl.DarkBlue)
 	rl.DrawText(definition.Description, 30, 66, 18, rl.Black)
@@ -676,8 +681,33 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 		fixedToFloat32(contactNormal.Z),
 	), 30, 286, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("View: %s", cameraViewLabel(viewMode)), 420, 101, 18, rl.Black)
-	rl.DrawText(fmt.Sprintf("Hash: %016x", sceneHash), 30, 314, 18, rl.Black)
-	rl.DrawText("Controls: Space pause | N step | R reset | Left/Right scene | 1-5 view | Wheel zoom | WASD move in perspective", 30, 342, 16, rl.Gray)
+	infoY := int32(314)
+	if state.BroadphaseCellCount > 0 || state.SphereSphereCandidateCount > 0 || state.BoxBoxCandidateCount > 0 || state.SphereBoxCandidateCount > 0 {
+		rl.DrawText(
+			fmt.Sprintf("Broadphase cells: %d", state.BroadphaseCellCount),
+			30,
+			infoY,
+			18,
+			rl.Black,
+		)
+		rl.DrawText(
+			fmt.Sprintf("Candidates SS/BB/SB: %d / %d / %d", state.SphereSphereCandidateCount, state.BoxBoxCandidateCount, state.SphereBoxCandidateCount),
+			30,
+			infoY+28,
+			18,
+			rl.Black,
+		)
+		rl.DrawText(
+			fmt.Sprintf("Hits SS/BB/SB: %d / %d / %d", state.SphereSphereHitCount, state.BoxBoxHitCount, state.SphereBoxHitCount),
+			30,
+			infoY+56,
+			18,
+			rl.Black,
+		)
+		infoY += 84
+	}
+	rl.DrawText(fmt.Sprintf("Hash: %016x", sceneHash), 30, infoY, 18, rl.Black)
+	rl.DrawText("Controls: Space pause | N step | R reset | Left/Right scene | 1-5 view | Wheel zoom | WASD move in perspective", 30, infoY+28, 16, rl.Gray)
 }
 
 func main() {

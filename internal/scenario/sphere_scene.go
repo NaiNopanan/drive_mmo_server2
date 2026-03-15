@@ -33,6 +33,7 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewHundredBoxesInBoxAngleScenario(),
 		NewFiftyRigidSpheresAndFiftyRigidBoxesInBoxScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario(),
 	}
 }
 
@@ -1904,6 +1905,140 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxScenario() ScenarioDefinitio
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "One hundred rigid spheres and one hundred rigid boxes stayed inside the open box and collided across both shape types.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 420
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes fall together into an open box using a uniform-grid broadphase to reduce pair checks.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 4),
+								fixed.FromFraction(int64((index%7)-3), 5),
+								fixed.FromFraction(int64((index%9)-4), 6),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The rigid spheres never collided with the rigid boxes.",
+				}
+			}
+			if !state.RigidSphereSphereCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The rigid spheres never collided with each other.",
+				}
+			}
+			if !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The rigid boxes never collided with each other.",
+				}
+			}
+			if state.SphereSphereCandidateCount >= 4950 || state.BoxBoxCandidateCount >= 4950 || state.SphereBoxCandidateCount >= 10000 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Broadphase did not reduce candidate pairs below the naive all-pairs counts.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere fell below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box fell below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Broadphase reduced candidate pairs while one hundred rigid spheres and one hundred rigid boxes stayed inside the open box.",
 			}
 		},
 	}
