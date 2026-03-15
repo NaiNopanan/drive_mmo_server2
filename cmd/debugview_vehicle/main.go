@@ -131,6 +131,24 @@ func vecToRL(v geom.Vec3) rl.Vector3 {
 	return rl.NewVector3(fixedToF(v.X), fixedToF(v.Y), fixedToF(v.Z))
 }
 
+func approachFixed(current, target, maxDelta fixed.Fixed) fixed.Fixed {
+	if current.Cmp(target) < 0 {
+		next := current.Add(maxDelta)
+		if next.Cmp(target) > 0 {
+			return target
+		}
+		return next
+	}
+	if current.Cmp(target) > 0 {
+		next := current.Sub(maxDelta)
+		if next.Cmp(target) < 0 {
+			return target
+		}
+		return next
+	}
+	return current
+}
+
 func drawTriangle3D(t geom.Triangle, color rl.Color) {
 	a := vecToRL(t.A)
 	b := vecToRL(t.B)
@@ -223,7 +241,7 @@ func spawnGrid(rows, cols int) []sim.Vehicle {
 	id := uint32(1)
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
-			vs = append(vs, sim.NewVehicle(id, geom.V3(
+			vs = append(vs, sim.NewAWDVehicle(id, geom.V3(
 				fixed.FromInt(int64(c*4)),
 				fixed.FromInt(15),
 				fixed.FromInt(int64(r*6)),
@@ -317,26 +335,44 @@ func main() {
 		// simple autopilot for non-selected
 		for i := range world.Vehicles {
 			if i == selected {
-				world.Vehicles[i].Input = sim.VehicleInput{}
 				continue
 			}
 			// basic hold throttle for fun
 			world.Vehicles[i].Input.Throttle = fixed.FromFraction(1, 2)
+			world.Vehicles[i].Input.Brake = fixed.Zero
+			world.Vehicles[i].Input.Steer = fixed.Zero
 		}
 
 		if selected < len(world.Vehicles) {
-			if rl.IsKeyDown(rl.KeyUp) {
-				world.Vehicles[selected].Input.Throttle = fixed.One
+			target := sim.VehicleInput{}
+
+			upDown := rl.IsKeyDown(rl.KeyUp)
+			downDown := rl.IsKeyDown(rl.KeyDown)
+			leftDown := rl.IsKeyDown(rl.KeyLeft)
+			rightDown := rl.IsKeyDown(rl.KeyRight)
+
+			if upDown && !downDown {
+				target.Throttle = fixed.One
+			} else if downDown && !upDown {
+				// reverse จริง ให้เบากว่าเดินหน้าเล็กน้อยเพื่อคุมง่าย
+				target.Throttle = fixed.FromFraction(3, 5).Neg()
 			}
-			if rl.IsKeyDown(rl.KeyDown) {
-				world.Vehicles[selected].Input.Brake = fixed.One
+
+			if leftDown && !rightDown {
+				target.Steer = fixed.One.Neg()
+			} else if rightDown && !leftDown {
+				target.Steer = fixed.One
 			}
-			if rl.IsKeyDown(rl.KeyLeft) {
-				world.Vehicles[selected].Input.Steer = fixed.One.Neg()
+
+			// แยก brake ไปที่ Control
+			if rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl) {
+				target.Brake = fixed.One
 			}
-			if rl.IsKeyDown(rl.KeyRight) {
-				world.Vehicles[selected].Input.Steer = fixed.One
-			}
+
+			in := &world.Vehicles[selected].Input
+			in.Throttle = approachFixed(in.Throttle, target.Throttle, fixed.FromFraction(1, 10)) // 0.10 / tick
+			in.Steer = approachFixed(in.Steer, target.Steer, fixed.FromFraction(3, 20))          // 0.15 / tick
+			in.Brake = approachFixed(in.Brake, target.Brake, fixed.FromFraction(1, 5))            // 0.20 / tick
 		}
 
 		if !paused || stepOnce {
@@ -432,8 +468,9 @@ func main() {
 				20, int32(150+i*22), 16, rl.DarkGray)
 		}
 
-		rl.DrawText("Controls: arrows=drive, tab=cycle, space=pause, 1/2/3=ground", 20, 300, 18, rl.DarkBlue)
-		rl.DrawText("Flycam: WASD/QE + JLI/K", 20, 325, 18, rl.DarkBlue)
+		rl.DrawText("Controls: Up=forward, Down=reverse, Left/Right=steer, Ctrl=brake", 20, 300, 18, rl.DarkBlue)
+		rl.DrawText("Viewer: Tab=cycle, Space=pause, N=step, R=reset, 1/2/3=ground", 20, 325, 18, rl.DarkBlue)
+		rl.DrawText("Flycam: WASD/QE + JLI/K", 20, 350, 18, rl.DarkBlue)
 
 		rl.EndDrawing()
 	}

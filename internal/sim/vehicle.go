@@ -109,8 +109,8 @@ func DefaultTuning() VehicleTuning {
 
 	// inertia = 1/12 * mass * (track^2 + base^2)
 	inertia := mass.Mul(track.Mul(track).Add(base.Mul(base))).Div(fixed.FromInt(12))
-	// Scale inertia to 25% for a balance between authority and stability
-	inertia = inertia.Mul(fixed.FromFraction(25, 100))
+	// Scale inertia for balance (30% is agile yet stable with speed-sensitive steering)
+	inertia = inertia.Mul(fixed.FromFraction(30, 100))
 
 	return VehicleTuning{
 		Mass:          mass,
@@ -146,11 +146,14 @@ func DefaultTuning() VehicleTuning {
 // ideal for prototype testing where driveability matters more than realism.
 func PrototypeTuning() VehicleTuning {
 	t := DefaultTuning()
+	t.MaxSpeed = fixed.FromInt(100)
+	t.RollingResistance = fixed.FromInt(100)
+	t.LateralGrip = fixed.FromInt(10000)
 	return t
 }
 
 func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
-	t := DefaultTuning()
+	t := PrototypeTuning()
 
 	v := Vehicle{
 		ID:        id,
