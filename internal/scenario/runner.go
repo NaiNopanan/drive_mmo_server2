@@ -70,6 +70,8 @@ type SceneState struct {
 	SphereSphereHitCount               int
 	BoxBoxHitCount                     int
 	SphereBoxHitCount                  int
+	CCDContactDetected                 bool
+	CCDTimeOfImpact                    fixed.Fixed
 }
 
 type ScenarioDefinition struct {

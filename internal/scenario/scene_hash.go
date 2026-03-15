@@ -76,6 +76,8 @@ func HashSceneState(state SceneState) uint64 {
 	writeUint64(uint64(state.SphereSphereHitCount))
 	writeUint64(uint64(state.BoxBoxHitCount))
 	writeUint64(uint64(state.SphereBoxHitCount))
+	writeBool(state.CCDContactDetected)
+	writeFixed(state.CCDTimeOfImpact)
 	writeUint64(uint64(len(state.BounceDetectedSet)))
 	for _, value := range state.BounceDetectedSet {
 		writeBool(value)

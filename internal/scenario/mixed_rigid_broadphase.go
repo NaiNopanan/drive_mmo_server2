@@ -310,6 +310,8 @@ func StepRigidSphereHighSpeedThinWallProjectileCCDScene(state *SceneState) {
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidSphere
 	contact := physics.SweepSphereAxisAlignedBoundingBox(
 		body.Motion.Position,
@@ -324,6 +326,8 @@ func StepRigidSphereHighSpeedThinWallProjectileCCDScene(state *SceneState) {
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
 	if normalVelocity.Cmp(fixed.Zero) < 0 {
@@ -346,6 +350,8 @@ func StepRigidSphereHighSpeedThinWallProjectileMeshCCDScene(state *SceneState) {
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidSphere
 	contact := physics.SweepSphereTriangleMesh(
 		body.Motion.Position,
@@ -360,6 +366,8 @@ func StepRigidSphereHighSpeedThinWallProjectileMeshCCDScene(state *SceneState) {
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
 	if normalVelocity.Cmp(fixed.Zero) < 0 {
@@ -382,6 +390,8 @@ func StepRigidBoxHighSpeedThinWallProjectileCCDScene(state *SceneState) {
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidBox
 	contact := physics.SweepAxisAlignedBoxAxisAlignedBoundingBox(
 		body.Motion.Position,
@@ -396,6 +406,8 @@ func StepRigidBoxHighSpeedThinWallProjectileCCDScene(state *SceneState) {
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
 	if normalVelocity.Cmp(fixed.Zero) < 0 {
@@ -418,6 +430,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileCCDScene(state *SceneState) 
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidBox
 	startPosition := body.Motion.Position
 	startVelocity := body.Motion.Velocity
@@ -436,6 +450,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileCCDScene(state *SceneState) 
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	normalVelocity := startVelocity.Dot(contact.Normal)
 	if normalVelocity.Cmp(fixed.Zero) < 0 {
@@ -458,6 +474,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScene(state *SceneStat
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidBox
 	contact := physics.SweepRotatingOrientedBoxAxisAlignedBoundingBox(*body, physics.DefaultTimeStep, state.GroundBoxes[0])
 	if !contact.Hit {
@@ -466,6 +484,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScene(state *SceneStat
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	body.Orientation = contact.Orientation
 	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
@@ -486,6 +506,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScene(state *Scene
 	}
 
 	state.LastContact = physics.SphereTriangleContact{}
+	state.CCDContactDetected = false
+	state.CCDTimeOfImpact = fixed.Zero
 	body := &state.RigidBox
 	contact := physics.SweepRotatingOrientedBoxTriangleMesh(*body, physics.DefaultTimeStep, state.GroundTriangles)
 	if !contact.Hit {
@@ -494,6 +516,8 @@ func StepRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScene(state *Scene
 	}
 
 	state.EverTouchedGround = true
+	state.CCDContactDetected = true
+	state.CCDTimeOfImpact = contact.TimeOfImpact
 	body.Motion.Position = contact.Position
 	body.Orientation = contact.Orientation
 	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)

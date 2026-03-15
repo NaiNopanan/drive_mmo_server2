@@ -665,6 +665,9 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 	if state.BroadphaseCellCount > 0 || state.SphereSphereCandidateCount > 0 || state.BoxBoxCandidateCount > 0 || state.SphereBoxCandidateCount > 0 {
 		overlayHeight = 404
 	}
+	if state.CCDContactDetected {
+		overlayHeight += 28
+	}
 	rl.DrawRectangle(18, 18, 560, int32(overlayHeight), rl.Fade(rl.RayWhite, 0.92))
 	rl.DrawRectangleLinesEx(rl.NewRectangle(18, 18, 560, overlayHeight), 2, rl.DarkGray)
 
@@ -720,6 +723,10 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 			rl.Black,
 		)
 		infoY += 84
+	}
+	if state.CCDContactDetected {
+		rl.DrawText(fmt.Sprintf("TOI: %.6f", float64(state.CCDTimeOfImpact.Raw())/float64(uint64(1)<<fixed.FracBits)), 30, infoY, 18, rl.Black)
+		infoY += 28
 	}
 	rl.DrawText(fmt.Sprintf("Hash: %016x", sceneHash), 30, infoY, 18, rl.Black)
 	rl.DrawText("Controls: Space pause | N step | R reset | Left/Right scene | 1-5 view | Wheel zoom | WASD move in perspective", 30, infoY+28, 16, rl.Gray)
