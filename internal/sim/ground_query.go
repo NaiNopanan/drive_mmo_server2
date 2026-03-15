@@ -18,7 +18,7 @@ type GroundQuery interface {
 
 // FlatGround implements GroundQuery for a simple horizontal plane.
 type FlatGround struct {
-	Y                       fixed.Fixed
+	Y                      fixed.Fixed
 	MinX, MaxX, MinZ, MaxZ fixed.Fixed
 }
 
@@ -122,15 +122,18 @@ func (wq WorldGroundQuery) Raycast(origin geom.Vec3, dir geom.Vec3, maxDist fixe
 }
 
 func sampleGroundAtXZ(tris []geom.Triangle, x, z, maxY fixed.Fixed) GroundHit {
+	const ceilingEpsilonRaw = 1 << 24
+
 	bestY := fixed.FromInt(-1000000)
 	var bestNormal geom.Vec3
 	found := false
+	ceiling := maxY.Add(fixed.FromRaw(ceilingEpsilonRaw))
 
 	for i := range tris {
 		t := tris[i]
 		if pointInTriangleXZ(x, z, t.A, t.B, t.C) {
 			y := solvePlaneY(t, x, z)
-			if y.Cmp(maxY.Add(fixed.One)) <= 0 && y.Cmp(bestY) > 0 {
+			if y.Cmp(ceiling) <= 0 && y.Cmp(bestY) > 0 {
 				bestY = y
 				bestNormal = t.Normal()
 				found = true

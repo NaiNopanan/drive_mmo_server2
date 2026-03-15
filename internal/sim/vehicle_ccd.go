@@ -93,7 +93,7 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 		a0 := v.wheelAnchorWorldFromPose(i, pose0)
 		a1 := v.wheelAnchorWorldFromPose(i, pose1)
 
-		hit0 := sampleGroundAtXZ(g.Triangles, a0.X, a0.Z, a0.Y.Add(fixed.FromInt(5)))
+		hit0 := sampleGroundAtXZ(g.Triangles, a0.X, a0.Z, a0.Y.Add(allowedOffset))
 		allowedY0 := fixed.FromInt(-10000)
 		if hit0.Hit {
 			allowedY0 = hit0.Point.Y.Add(allowedOffset)
@@ -110,7 +110,7 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 			}
 		}
 
-		hit1 := sampleGroundAtXZ(g.Triangles, a1.X, a1.Z, a1.Y.Add(fixed.FromInt(5)))
+		hit1 := sampleGroundAtXZ(g.Triangles, a1.X, a1.Z, a1.Y.Add(allowedOffset))
 		if !hit1.Hit {
 			continue
 		}
@@ -124,7 +124,7 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 			for iter := 0; iter < 6; iter++ {
 				mid := low.Add(high).Mul(fixed.FromFraction(5, 10))
 				aMid := a0.Add(a1.Sub(a0).Scale(mid))
-				hitMid := sampleGroundAtXZ(g.Triangles, aMid.X, aMid.Z, aMid.Y.Add(fixed.FromInt(5)))
+				hitMid := sampleGroundAtXZ(g.Triangles, aMid.X, aMid.Z, aMid.Y.Add(allowedOffset))
 
 				if hitMid.Hit && aMid.Y.Cmp(hitMid.Point.Y.Add(allowedOffset)) < 0 {
 					high = mid

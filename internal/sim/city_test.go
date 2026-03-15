@@ -145,6 +145,43 @@ func TestCityWorld_SmokeDriveStaysGroundedAndOutsideObstacles(t *testing.T) {
 	}
 }
 
+func TestCityWorld_DrivingUnderBridgeStaysOnLowerRoad(t *testing.T) {
+	world := NewCityWorld()
+	world.Vehicle.Position = geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-28))
+	world.Vehicle.Yaw = fixed.Zero
+	world.Vehicle.UpdateBasisFromYaw()
+
+	dt := fixed.FromFraction(1, 60)
+	maxYUnderBridge := fixed.Zero
+	seenUnderBridge := false
+
+	for tick := 0; tick < 300; tick++ {
+		world.Vehicle.Input.Brake = fixed.Zero
+		world.Vehicle.Input.Steer = fixed.Zero
+		if tick < 45 {
+			world.Vehicle.Input.Throttle = fixed.Zero
+		} else {
+			world.Vehicle.Input.Throttle = fixed.FromFraction(7, 10)
+		}
+
+		world.Step(dt)
+
+		if world.Vehicle.Position.Z.Cmp(fixed.FromInt(-8)) >= 0 && world.Vehicle.Position.Z.Cmp(fixed.FromInt(8)) <= 0 {
+			seenUnderBridge = true
+			if world.Vehicle.Position.Y.Cmp(maxYUnderBridge) > 0 {
+				maxYUnderBridge = world.Vehicle.Position.Y
+			}
+		}
+	}
+
+	if !seenUnderBridge {
+		t.Fatalf("vehicle never reached under-bridge section")
+	}
+	if maxYUnderBridge.Cmp(fixed.FromInt(2)) > 0 {
+		t.Fatalf("vehicle was lifted toward overpass while on lower road: maxY=%v", maxYUnderBridge)
+	}
+}
+
 func downDir() geom.Vec3 {
 	return geom.V3(fixed.Zero, fixed.One.Neg(), fixed.Zero)
 }
