@@ -22,15 +22,28 @@ type ScenarioResult struct {
 }
 
 type SceneState struct {
-	Tick              uint64
-	Sphere            physics.SphereBody
-	Spheres           []physics.SphereBody
-	GroundTriangles   []geometry.Triangle
-	LastContact       physics.SphereTriangleContact
-	LastContacts      []physics.SphereTriangleContact
-	EverTouchedGround bool
-	BounceDetected    bool
-	PeakBounceHeight  fixed.Fixed
+	Tick                     uint64
+	Sphere                   physics.SphereBody
+	Spheres                  []physics.SphereBody
+	Box                      physics.BoxBody
+	Boxes                    []physics.BoxBody
+	RigidBox                 physics.RigidBoxBody3D
+	GroundTriangles          []geometry.Triangle
+	GroundBoxes              []geometry.AxisAlignedBoundingBox
+	LastContact              physics.SphereTriangleContact
+	LastContacts             []physics.SphereTriangleContact
+	EverTouchedGround        bool
+	BounceDetected           bool
+	BounceDetectedSet        []bool
+	PeakBounceHeight         fixed.Fixed
+	PeakBounceHeights        []fixed.Fixed
+	BoxBounceDetectedSet     []bool
+	BoxPeakBounceHeights     []fixed.Fixed
+	BoxInitialRotations      []fixed.Fixed
+	BoxRotationChangedSet    []bool
+	RigidBoxBounceDetected   bool
+	RigidBoxPeakBounceHeight fixed.Fixed
+	RigidBoxRotationChanged  bool
 }
 
 type ScenarioDefinition struct {

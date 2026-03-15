@@ -99,6 +99,20 @@ func StepSphereBodyWithGravity(body *SphereBody, dt fixed.Fixed, gravity geometr
 	return StepSphereBody(body, dt, triangles)
 }
 
+// StepSphereBodyWithGravityAndRestitutionOverride applies gravity and advances the sphere body with an explicit contact restitution.
+func StepSphereBodyWithGravityAndRestitutionOverride(body *SphereBody, dt fixed.Fixed, gravity geometry.Vector3, triangles []geometry.Triangle, contactRestitution fixed.Fixed) SphereStepResult {
+	if body == nil {
+		return SphereStepResult{}
+	}
+
+	originalRestitution := body.Restitution
+	body.Restitution = contactRestitution
+	ApplyForce(&body.Motion, ComputeGravityForce(body.Motion.Mass, gravity))
+	result := StepSphereBody(body, dt, triangles)
+	body.Restitution = originalRestitution
+	return result
+}
+
 func selectDeepestSphereTriangleContact(center geometry.Vector3, radius fixed.Fixed, triangles []geometry.Triangle) (sphereTriangleCandidate, bool) {
 	best := sphereTriangleCandidate{}
 	found := false

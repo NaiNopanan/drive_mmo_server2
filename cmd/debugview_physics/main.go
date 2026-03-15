@@ -50,8 +50,18 @@ func drawTriangleWireframe(triangle geometry.Triangle, color rl.Color) {
 	rl.DrawLine3D(c, a, color)
 }
 
+func drawTriangleSolid(triangle geometry.Triangle, color rl.Color) {
+	a := vector3ToRaylibVector(triangle.A)
+	b := vector3ToRaylibVector(triangle.B)
+	c := vector3ToRaylibVector(triangle.C)
+
+	rl.DrawTriangle3D(a, b, c, color)
+}
+
 func drawGroundTriangles(triangles []geometry.Triangle) {
 	for _, triangle := range triangles {
+		fillColor := rl.Fade(rl.SkyBlue, 0.45)
+		drawTriangleSolid(triangle, fillColor)
 		drawTriangleWireframe(triangle, rl.Purple)
 	}
 }
@@ -83,6 +93,144 @@ func drawSphereBodies(bodies []physics.SphereBody) {
 	}
 }
 
+func drawBoxBody(body physics.BoxBody) {
+	color := rl.Orange
+	wireColor := rl.Brown
+	if body.Grounded {
+		color = rl.Green
+		wireColor = rl.DarkGreen
+	}
+
+	drawBoxSolid(body, color)
+	drawBoxWireframe(body, wireColor)
+
+	position := vector3ToRaylibVector(body.Motion.Position)
+
+	velocityEnd := rl.NewVector3(
+		position.X+fixedToFloat32(body.Motion.Velocity.X)*0.25,
+		position.Y+fixedToFloat32(body.Motion.Velocity.Y)*0.25,
+		position.Z+fixedToFloat32(body.Motion.Velocity.Z)*0.25,
+	)
+	rl.DrawLine3D(position, velocityEnd, rl.Red)
+}
+
+func boxCorners(body physics.BoxBody) []rl.Vector3 {
+	corners := make([]rl.Vector3, 0, 8)
+	localCorners := []geometry.Vector3{
+		geometry.NewVector3(body.HalfExtents.X.Neg(), body.HalfExtents.Y.Neg(), body.HalfExtents.Z.Neg()),
+		geometry.NewVector3(body.HalfExtents.X, body.HalfExtents.Y.Neg(), body.HalfExtents.Z.Neg()),
+		geometry.NewVector3(body.HalfExtents.X, body.HalfExtents.Y, body.HalfExtents.Z.Neg()),
+		geometry.NewVector3(body.HalfExtents.X.Neg(), body.HalfExtents.Y, body.HalfExtents.Z.Neg()),
+		geometry.NewVector3(body.HalfExtents.X.Neg(), body.HalfExtents.Y.Neg(), body.HalfExtents.Z),
+		geometry.NewVector3(body.HalfExtents.X, body.HalfExtents.Y.Neg(), body.HalfExtents.Z),
+		geometry.NewVector3(body.HalfExtents.X, body.HalfExtents.Y, body.HalfExtents.Z),
+		geometry.NewVector3(body.HalfExtents.X.Neg(), body.HalfExtents.Y, body.HalfExtents.Z),
+	}
+
+	sinAngle := fixed.Sin(body.RotationZ)
+	cosAngle := fixed.Cos(body.RotationZ)
+	for _, corner := range localCorners {
+		rotated := geometry.NewVector3(
+			corner.X.Mul(cosAngle).Sub(corner.Y.Mul(sinAngle)),
+			corner.X.Mul(sinAngle).Add(corner.Y.Mul(cosAngle)),
+			corner.Z,
+		)
+		corners = append(corners, vector3ToRaylibVector(body.Motion.Position.Add(rotated)))
+	}
+
+	return corners
+}
+
+func drawBoxSolid(body physics.BoxBody, color rl.Color) {
+	corners := boxCorners(body)
+	faces := [][4]int{
+		{0, 1, 2, 3},
+		{4, 5, 6, 7},
+		{0, 1, 5, 4},
+		{1, 2, 6, 5},
+		{2, 3, 7, 6},
+		{3, 0, 4, 7},
+	}
+
+	for _, face := range faces {
+		rl.DrawTriangle3D(corners[face[0]], corners[face[1]], corners[face[2]], color)
+		rl.DrawTriangle3D(corners[face[0]], corners[face[2]], corners[face[3]], color)
+	}
+}
+
+func drawBoxWireframe(body physics.BoxBody, color rl.Color) {
+	corners := boxCorners(body)
+	edges := [][2]int{
+		{0, 1}, {1, 2}, {2, 3}, {3, 0},
+		{4, 5}, {5, 6}, {6, 7}, {7, 4},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7},
+	}
+	for _, edge := range edges {
+		rl.DrawLine3D(corners[edge[0]], corners[edge[1]], color)
+	}
+}
+
+func drawBoxBodies(bodies []physics.BoxBody) {
+	for _, body := range bodies {
+		drawBoxBody(body)
+	}
+}
+
+func rigidBoxCorners(body physics.RigidBoxBody3D) []rl.Vector3 {
+	corners := make([]rl.Vector3, 0, 8)
+	for _, corner := range body.WorldCorners() {
+		corners = append(corners, vector3ToRaylibVector(corner))
+	}
+	return corners
+}
+
+func drawRigidBoxBody(body physics.RigidBoxBody3D) {
+	color := rl.Orange
+	wireColor := rl.Brown
+	if body.Grounded {
+		color = rl.Green
+		wireColor = rl.DarkGreen
+	}
+
+	corners := rigidBoxCorners(body)
+	faces := [][4]int{
+		{0, 1, 2, 3},
+		{4, 5, 6, 7},
+		{0, 1, 5, 4},
+		{1, 2, 6, 5},
+		{2, 3, 7, 6},
+		{3, 0, 4, 7},
+	}
+	for _, face := range faces {
+		rl.DrawTriangle3D(corners[face[0]], corners[face[1]], corners[face[2]], color)
+		rl.DrawTriangle3D(corners[face[0]], corners[face[2]], corners[face[3]], color)
+	}
+
+	edges := [][2]int{
+		{0, 1}, {1, 2}, {2, 3}, {3, 0},
+		{4, 5}, {5, 6}, {6, 7}, {7, 4},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7},
+	}
+	for _, edge := range edges {
+		rl.DrawLine3D(corners[edge[0]], corners[edge[1]], wireColor)
+	}
+
+	position := vector3ToRaylibVector(body.Motion.Position)
+	velocityEnd := rl.NewVector3(
+		position.X+fixedToFloat32(body.Motion.Velocity.X)*0.25,
+		position.Y+fixedToFloat32(body.Motion.Velocity.Y)*0.25,
+		position.Z+fixedToFloat32(body.Motion.Velocity.Z)*0.25,
+	)
+	rl.DrawLine3D(position, velocityEnd, rl.Red)
+}
+
+func sceneRigidBox(state scenario.SceneState) *physics.RigidBoxBody3D {
+	if state.RigidBox.HalfExtents.X.Cmp(fixed.Zero) > 0 {
+		return &state.RigidBox
+	}
+	return nil
+}
+
 func drawContactDebug(contact physics.SphereTriangleContact) {
 	if !contact.Hit {
 		return
@@ -109,7 +257,20 @@ func sceneSpheres(state scenario.SceneState) []physics.SphereBody {
 	if len(state.Spheres) > 0 {
 		return state.Spheres
 	}
-	return []physics.SphereBody{state.Sphere}
+	if state.Sphere.Radius.Cmp(fixed.Zero) > 0 {
+		return []physics.SphereBody{state.Sphere}
+	}
+	return nil
+}
+
+func sceneBoxes(state scenario.SceneState) []physics.BoxBody {
+	if len(state.Boxes) > 0 {
+		return state.Boxes
+	}
+	if state.Box.HalfExtents.X.Cmp(fixed.Zero) > 0 {
+		return []physics.BoxBody{state.Box}
+	}
+	return nil
 }
 
 func sceneContacts(state scenario.SceneState) []physics.SphereTriangleContact {
@@ -207,6 +368,15 @@ func setCameraFromViewMode(camera *rl.Camera3D, mode cameraViewMode, distance fl
 	}
 }
 
+func defaultSideViewMode() cameraViewMode {
+	return cameraViewFront
+}
+
+func shouldFollowSphere(definition scenario.ScenarioDefinition) bool {
+	return definition.Name == "Sphere Drop On 30 Degree Slope" ||
+		definition.Name == "Sphere Bounce On 30 Degree Slope"
+}
+
 func updateCamera(camera *rl.Camera3D, mode cameraViewMode, distance *float32, focus rl.Vector3) {
 	if distance == nil {
 		return
@@ -268,9 +438,31 @@ func statusColor(status scenario.ScenarioResultStatus) rl.Color {
 func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *scenario.ScenarioRunner, viewMode cameraViewMode) {
 	state := runner.State
 	spheres := sceneSpheres(state)
-	sphere := spheres[0]
+	boxes := sceneBoxes(state)
+	rigidBox := sceneRigidBox(state)
 	contactNormal := state.LastContact.Normal
 	sceneHash := scenario.HashSceneState(state)
+
+	position := geometry.ZeroVector3()
+	velocity := geometry.ZeroVector3()
+	grounded := false
+	objectCount := len(spheres)
+
+	if rigidBox != nil {
+		position = rigidBox.Motion.Position
+		velocity = rigidBox.Motion.Velocity
+		grounded = rigidBox.Grounded
+		objectCount = 1
+	} else if len(boxes) > 0 {
+		position = boxes[0].Motion.Position
+		velocity = boxes[0].Motion.Velocity
+		grounded = boxes[0].Grounded
+		objectCount = len(boxes)
+	} else {
+		position = spheres[0].Motion.Position
+		velocity = spheres[0].Motion.Velocity
+		grounded = spheres[0].Grounded
+	}
 
 	rl.DrawRectangle(18, 18, 560, 320, rl.Fade(rl.RayWhite, 0.92))
 	rl.DrawRectangleLinesEx(rl.NewRectangle(18, 18, 560, 320), 2, rl.DarkGray)
@@ -286,17 +478,17 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 
 	rl.DrawText(fmt.Sprintf("Result: %s", runner.LastResult.Message), 30, 138, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Position: (%.3f, %.3f, %.3f)",
-		fixedToFloat32(sphere.Motion.Position.X),
-		fixedToFloat32(sphere.Motion.Position.Y),
-		fixedToFloat32(sphere.Motion.Position.Z),
+		fixedToFloat32(position.X),
+		fixedToFloat32(position.Y),
+		fixedToFloat32(position.Z),
 	), 30, 174, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Velocity: (%.3f, %.3f, %.3f)",
-		fixedToFloat32(sphere.Motion.Velocity.X),
-		fixedToFloat32(sphere.Motion.Velocity.Y),
-		fixedToFloat32(sphere.Motion.Velocity.Z),
+		fixedToFloat32(velocity.X),
+		fixedToFloat32(velocity.Y),
+		fixedToFloat32(velocity.Z),
 	), 30, 202, 18, rl.Black)
-	rl.DrawText(fmt.Sprintf("Grounded: %v | Ever touched ground: %v", sphere.Grounded, state.EverTouchedGround), 30, 230, 18, rl.Black)
-	rl.DrawText(fmt.Sprintf("Sphere count: %d", len(spheres)), 30, 258, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("Grounded: %v | Ever touched ground: %v", grounded, state.EverTouchedGround), 30, 230, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("Object count: %d", objectCount), 30, 258, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Contact normal: (%.3f, %.3f, %.3f)",
 		fixedToFloat32(contactNormal.X),
 		fixedToFloat32(contactNormal.Y),
@@ -321,11 +513,11 @@ func main() {
 	runner := scenario.NewScenarioRunner(definitions[currentIndex])
 	paused := false
 	stepOnce := false
-	viewMode := cameraViewPerspective
+	viewMode := defaultSideViewMode()
 	viewDistance := float32(16)
 
 	camera := rl.Camera3D{
-		Position:   rl.NewVector3(16, 14, 16),
+		Position:   rl.NewVector3(0, 6, -16),
 		Target:     rl.NewVector3(0, 2, 0),
 		Up:         rl.NewVector3(0, 1, 0),
 		Fovy:       45,
@@ -341,30 +533,49 @@ func main() {
 		}
 		if rl.IsKeyPressed(rl.KeyR) {
 			runner.Reset()
+			viewMode = defaultSideViewMode()
 		}
 		if rl.IsKeyPressed(rl.KeyRight) {
 			currentIndex = (currentIndex + 1) % len(definitions)
 			runner = scenario.NewScenarioRunner(definitions[currentIndex])
+			viewMode = defaultSideViewMode()
 		}
 		if rl.IsKeyPressed(rl.KeyLeft) {
 			currentIndex = (currentIndex - 1 + len(definitions)) % len(definitions)
 			runner = scenario.NewScenarioRunner(definitions[currentIndex])
+			viewMode = defaultSideViewMode()
 		}
 
 		previousViewMode := viewMode
 		viewMode = updateViewModeFromKeyboard(viewMode)
 		spheres := sceneSpheres(runner.State)
+		boxes := sceneBoxes(runner.State)
+		rigidBox := sceneRigidBox(runner.State)
+		focusSource := geometry.ZeroVector3()
+		if rigidBox != nil {
+			focusSource = rigidBox.Motion.Position
+		} else if len(boxes) > 0 {
+			focusSource = boxes[0].Motion.Position
+		} else {
+			focusSource = spheres[0].Motion.Position
+		}
 		focus := rl.NewVector3(
-			fixedToFloat32(spheres[0].Motion.Position.X),
-			fixedToFloat32(spheres[0].Motion.Position.Y),
-			fixedToFloat32(spheres[0].Motion.Position.Z),
+			fixedToFloat32(focusSource.X),
+			fixedToFloat32(focusSource.Y),
+			fixedToFloat32(focusSource.Z),
 		)
 
-		if focus.Y < 1 {
-			focus.Y = 1
+		if shouldFollowSphere(definitions[currentIndex]) {
+			if focus.Y < -8 {
+				focus.Y = -8
+			}
+		} else {
+			if focus.Y < 1 {
+				focus.Y = 1
+			}
+			focus.X = 0
+			focus.Z = 0
 		}
-		focus.X = 0
-		focus.Z = 0
 
 		if viewMode != previousViewMode {
 			setCameraFromViewMode(&camera, viewMode, viewDistance, focus)
@@ -387,6 +598,10 @@ func main() {
 		drawWorldAxes()
 		drawGroundTriangles(runner.State.GroundTriangles)
 		drawSphereBodies(sceneSpheres(runner.State))
+		drawBoxBodies(sceneBoxes(runner.State))
+		if rigidBox := sceneRigidBox(runner.State); rigidBox != nil {
+			drawRigidBoxBody(*rigidBox)
+		}
 		drawContactDebugList(sceneContacts(runner.State))
 		rl.EndMode3D()
 

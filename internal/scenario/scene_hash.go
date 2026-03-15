@@ -65,7 +65,15 @@ func HashSceneState(state SceneState) uint64 {
 	writeBool(state.Sphere.Grounded)
 	writeBool(state.EverTouchedGround)
 	writeBool(state.BounceDetected)
+	writeUint64(uint64(len(state.BounceDetectedSet)))
+	for _, value := range state.BounceDetectedSet {
+		writeBool(value)
+	}
 	writeFixed(state.PeakBounceHeight)
+	writeUint64(uint64(len(state.PeakBounceHeights)))
+	for _, value := range state.PeakBounceHeights {
+		writeFixed(value)
+	}
 	writeContact(state.LastContact)
 	writeUint64(uint64(len(state.Spheres)))
 	for _, sphere := range state.Spheres {
@@ -82,6 +90,69 @@ func HashSceneState(state SceneState) uint64 {
 	for _, contact := range state.LastContacts {
 		writeContact(contact)
 	}
+	writeVector3(state.Box.Motion.Position)
+	writeVector3(state.Box.Motion.Velocity)
+	writeVector3(state.Box.Motion.AccumulatedForce)
+	writeFixed(state.Box.Motion.Mass)
+	writeFixed(state.Box.Motion.InverseMass)
+	writeVector3(state.Box.HalfExtents)
+	writeFixed(state.Box.Restitution)
+	writeFixed(state.Box.RotationZ)
+	writeFixed(state.Box.AngularVelocityZ)
+	writeFixed(state.Box.InverseInertiaZ)
+	writeBool(state.Box.Grounded)
+	writeUint64(uint64(len(state.Boxes)))
+	for _, box := range state.Boxes {
+		writeVector3(box.Motion.Position)
+		writeVector3(box.Motion.Velocity)
+		writeVector3(box.Motion.AccumulatedForce)
+		writeFixed(box.Motion.Mass)
+		writeFixed(box.Motion.InverseMass)
+		writeVector3(box.HalfExtents)
+		writeFixed(box.Restitution)
+		writeFixed(box.RotationZ)
+		writeFixed(box.AngularVelocityZ)
+		writeFixed(box.InverseInertiaZ)
+		writeBool(box.Grounded)
+	}
+	writeUint64(uint64(len(state.GroundBoxes)))
+	for _, box := range state.GroundBoxes {
+		writeVector3(box.Min)
+		writeVector3(box.Max)
+	}
+	writeUint64(uint64(len(state.BoxBounceDetectedSet)))
+	for _, value := range state.BoxBounceDetectedSet {
+		writeBool(value)
+	}
+	writeUint64(uint64(len(state.BoxPeakBounceHeights)))
+	for _, value := range state.BoxPeakBounceHeights {
+		writeFixed(value)
+	}
+	writeUint64(uint64(len(state.BoxInitialRotations)))
+	for _, value := range state.BoxInitialRotations {
+		writeFixed(value)
+	}
+	writeUint64(uint64(len(state.BoxRotationChangedSet)))
+	for _, value := range state.BoxRotationChangedSet {
+		writeBool(value)
+	}
+	writeVector3(state.RigidBox.Motion.Position)
+	writeVector3(state.RigidBox.Motion.Velocity)
+	writeVector3(state.RigidBox.Motion.AccumulatedForce)
+	writeFixed(state.RigidBox.Motion.Mass)
+	writeFixed(state.RigidBox.Motion.InverseMass)
+	writeVector3(state.RigidBox.HalfExtents)
+	writeFixed(state.RigidBox.Restitution)
+	writeBool(state.RigidBox.Grounded)
+	writeFixed(state.RigidBox.Orientation.W)
+	writeFixed(state.RigidBox.Orientation.X)
+	writeFixed(state.RigidBox.Orientation.Y)
+	writeFixed(state.RigidBox.Orientation.Z)
+	writeVector3(state.RigidBox.AngularVelocity)
+	writeVector3(state.RigidBox.InverseInertiaBody)
+	writeBool(state.RigidBoxBounceDetected)
+	writeFixed(state.RigidBoxPeakBounceHeight)
+	writeBool(state.RigidBoxRotationChanged)
 	writeUint64(uint64(len(state.GroundTriangles)))
 	for _, triangle := range state.GroundTriangles {
 		writeTriangle(triangle)
