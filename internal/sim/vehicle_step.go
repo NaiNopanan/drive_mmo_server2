@@ -28,26 +28,48 @@ func (v *Vehicle) collectCurrentForces(dt fixed.Fixed, g GroundQuery) {
 		f := v.computeWheelMotionForces(i)
 		v.TotalForce = v.TotalForce.Add(f)
 
-		// 3D Torque = r x f
 		r := v.Wheels[i].ContactPoint.Sub(v.Position)
 		torque := r.Cross(f)
-
-		// Project torque onto local basis.
-		// We care about rotation around the vehicle's local up axis so
-		// the car still behaves predictably on slopes.
 		v.TotalTorqueY = v.TotalTorqueY.Add(torque.Dot(v.UpWS))
 	}
 }
 
 func (v *Vehicle) refreshFinalContactState(dt fixed.Fixed, g GroundQuery) {
-	// Re-sample contacts at the FINAL pose of this tick.
-	// เดิมฟังก์ชันนี้ finalize อย่างเดียว ทำให้สถานะ grounded/contactNormal
-	// ตอนจบ tick ยังอิงข้อมูลเก่าจากต้น tick อยู่
 	for i := range v.Wheels {
 		v.queryWheelGround(i, g)
 		v.computeWheelSuspensionForce(i, dt)
 	}
 	v.finalizeSuspensionState()
+}
+
+// finalAverageGroundNormal computes a blended average normal from all grounded
+// wheels at the final pose of the tick. Blending 80% toward the previous UpWS
+// damps high-frequency basis chatter from per-frame triangle normal variation.
+func (v *Vehicle) finalAverageGroundNormal() geom.Vec3 {
+	rawAvg := geom.V3(fixed.Zero, fixed.One, fixed.Zero)
+
+	if v.GroundedWheels > 0 {
+		sumN := geom.Zero()
+		count := 0
+		for i := range v.Wheels {
+			if v.Wheels[i].InContact {
+				sumN = sumN.Add(v.Wheels[i].ContactNormal)
+				count++
+			}
+		}
+		if count > 0 {
+			rawAvg = sumN.Scale(fixed.FromFraction(1, int64(count))).Normalize()
+		}
+	}
+
+	blended := v.safeNormalize(
+		v.UpWS.Scale(fixed.FromFraction(4, 5)).
+			Add(rawAvg.Scale(fixed.FromFraction(1, 5))),
+	)
+	if blended.LengthSq().Cmp(fixed.Zero) == 0 {
+		return rawAvg
+	}
+	return blended
 }
 
 func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
@@ -71,13 +93,12 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 	// 3) Sweep for earliest ground TOI.
 	toi := v.FindGroundTOI(startPose, endPose, g)
 	if !toi.Hit {
-		// Normal discrete step.
 		v.Position = fullPos
 		v.Velocity = fullVel
 		v.Yaw = fullYaw
 		v.YawVelocity = fullYawVel
 	} else {
-		// 4) Impact: advance to hit time.
+		// 4) Advance to hit time.
 		hitDt := dt.Mul(toi.Time)
 		v.Position, v.Velocity, v.Yaw, v.YawVelocity = v.predictFromCurrentState(hitDt, VehicleGravity)
 
@@ -85,9 +106,7 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 		v.resolveGroundImpactVelocity(toi.Normal)
 		v.applyCCDSeparationBias(toi.Normal, toi.Depth)
 
-		// 6) Rebuild basis + recollect forces from the hit pose before
-		// integrating the remaining time. This is the big fix that makes
-		// landing / entering a slope feel much less “floaty”.
+		// 6) Rebuild basis + recollect forces before integrating remaining time.
 		remDt := dt.Sub(hitDt)
 		if remDt.Cmp(fixed.Zero) > 0 {
 			v.UpdateBasis(toi.Normal)
@@ -99,56 +118,44 @@ func (v *Vehicle) Step(dt fixed.Fixed, g GroundQuery) {
 	// 7) Refresh actual grounded/contact state at the FINAL pose.
 	v.refreshFinalContactState(dt, g)
 
-	// 8) Build final average normal from actual wheel contacts.
-	avgNormal := geom.V3(fixed.Zero, fixed.One, fixed.Zero)
-	if v.GroundedWheels > 0 {
-		sumN := geom.Zero()
-		count := 0
+	// 8) Blended average from actual final wheel contacts.
+	avgNormal := v.finalAverageGroundNormal()
 
-		for i := range v.Wheels {
-			if v.Wheels[i].InContact {
-				sumN = sumN.Add(v.Wheels[i].ContactNormal)
-				count++
-			}
-		}
-
-		if count > 0 {
-			avgNormal = sumN.Scale(fixed.FromFraction(1, int64(count))).Normalize()
+	// 9) One more inward-normal cleanup at the FINAL contact state.
+	// This handles the case where the car is grounded but still carries a tiny
+	// inward-normal velocity from CCD that causes sink / bounce chatter.
+	if v.OnGround && v.GroundedWheels >= 2 {
+		inwardNormalSpeed := v.Velocity.Dot(avgNormal)
+		if inwardNormalSpeed.Cmp(fixed.Zero) < 0 {
+			v.Velocity = v.Velocity.Sub(avgNormal.Scale(inwardNormalSpeed))
 		}
 	}
 
-	// 9) Update basis once at the end so post-step damping uses the newest slope basis
-	// and the next frame starts from the final orientation.
+	// 10) Update basis once at end; post-step damping uses the newest slope basis.
 	v.UpdateBasis(avgNormal)
 
-	// 10) Damping after final basis/contact state is known.
+	// 11) Damping after final basis/contact state is known.
 	v.applyPostStepDamping()
 }
 
 // applyPostStepDamping is called once per full physics tick (not per sub-step).
-// Goals:
-// 1) Keep yaw from “snapping dead” when steering is released.
-// 2) Bleed lateral drift gently while preserving forward / reverse motion.
 func (v *Vehicle) applyPostStepDamping() {
-	steerDeadzone := fixed.FromFraction(1, 100) // 0.01
+	steerDeadzone := fixed.FromFraction(2, 100) // 0.02
 	steerActive := v.Input.Steer.Abs().Cmp(steerDeadzone) >= 0
 
-	// Softer yaw stabilization when not actively steering.
 	if !steerActive {
-		v.YawVelocity = v.YawVelocity.Mul(fixed.FromFraction(90, 100))
+		v.YawVelocity = v.YawVelocity.Mul(fixed.FromFraction(92, 100))
 		if v.YawVelocity.Abs().Cmp(fixed.FromFraction(5, 1000)) < 0 {
 			v.YawVelocity = fixed.Zero
 		}
 	}
 
-	// Bleed sideways slip without killing longitudinal motion.
-	// Use the FINAL basis so this still behaves sensibly on slopes.
 	if v.OnGround {
 		lateralSpeed := v.Velocity.Dot(v.RightWS)
 
-		keep := fixed.FromFraction(90, 100) // 10% bleed by default
+		keep := fixed.FromFraction(88, 100)
 		if steerActive {
-			keep = fixed.FromFraction(94, 100) // keep a bit more lateral motion while actively turning
+			keep = fixed.FromFraction(92, 100)
 		}
 
 		targetLateral := lateralSpeed.Mul(keep)

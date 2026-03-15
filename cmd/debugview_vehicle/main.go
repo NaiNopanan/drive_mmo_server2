@@ -283,6 +283,7 @@ func main() {
 	selected := 0
 	paused := false
 	stepOnce := false
+	invertSteerInput := true
 
 	for !rl.WindowShouldClose() {
 		dtFixed := fixed.FromFraction(1, 60)
@@ -329,6 +330,9 @@ func main() {
 				selected = 0
 			}
 		}
+		if rl.IsKeyPressed(rl.KeyV) {
+			invertSteerInput = !invertSteerInput
+		}
 
 		cameraRig.Update(1.0 / 60.0)
 
@@ -358,10 +362,17 @@ func main() {
 				target.Throttle = fixed.FromFraction(3, 5).Neg()
 			}
 
+			leftSteer := fixed.One.Neg()
+			rightSteer := fixed.One
+			if invertSteerInput {
+				leftSteer = fixed.One
+				rightSteer = fixed.One.Neg()
+			}
+
 			if leftDown && !rightDown {
-				target.Steer = fixed.One.Neg()
+				target.Steer = leftSteer
 			} else if rightDown && !leftDown {
-				target.Steer = fixed.One
+				target.Steer = rightSteer
 			}
 
 			// แยก brake ไปที่ Ctrl จะได้ไม่ชนกับ reverse
@@ -469,7 +480,7 @@ func main() {
 		}
 
 		rl.DrawText("Controls: Up=forward, Down=reverse, Left/Right=steer, Ctrl=brake", 20, 300, 18, rl.DarkBlue)
-		rl.DrawText("Viewer: Tab=cycle, Space=pause, N=step, R=reset, 1/2/3=ground", 20, 325, 18, rl.DarkBlue)
+		rl.DrawText(fmt.Sprintf("Viewer: Tab=cycle, Space=pause, N=step, R=reset, 1/2/3=ground, V=invert steer (%v)", invertSteerInput), 20, 325, 18, rl.DarkBlue)
 		rl.DrawText("Flycam: WASD/QE + JLI/K", 20, 350, 18, rl.DarkBlue)
 
 		rl.EndDrawing()

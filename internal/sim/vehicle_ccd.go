@@ -49,9 +49,9 @@ func (v *Vehicle) predictFromCurrentState(dt fixed.Fixed, gravity geom.Vec3) (ne
 	yawAcc := v.TotalTorqueY.Mul(v.Tuning.InvYawInertia)
 	nextYawVel = v.YawVelocity.Add(yawAcc.Mul(dt))
 
-	// Softer always-on yaw drag than before.
-	// เดิม 0.90 ต่อ tick ค่อนข้างหักอาการหมุนเร็วเกินไป
-	nextYawVel = nextYawVel.Mul(fixed.FromFraction(96, 100))
+	// Light always-on yaw drag: 97% per tick (~1.8% per tick at 60Hz).
+	// Enough to prevent yaw spin-up without making steering feel "stuck".
+	nextYawVel = nextYawVel.Mul(fixed.FromFraction(97, 100))
 
 	yawSnap := fixed.FromFraction(1, 1000) // 0.001 rad/s
 	if nextYawVel.Abs().Cmp(yawSnap) < 0 {
@@ -93,7 +93,6 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 		a0 := v.wheelAnchorWorldFromPose(i, pose0)
 		a1 := v.wheelAnchorWorldFromPose(i, pose1)
 
-		// 1) Sample ground at start.
 		hit0 := sampleGroundAtXZ(g.Triangles, a0.X, a0.Z, a0.Y.Add(fixed.FromInt(5)))
 		allowedY0 := fixed.FromInt(-10000)
 		if hit0.Hit {
@@ -111,7 +110,6 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 			}
 		}
 
-		// 2) Check if end is below ground.
 		hit1 := sampleGroundAtXZ(g.Triangles, a1.X, a1.Z, a1.Y.Add(fixed.FromInt(5)))
 		if !hit1.Hit {
 			continue
@@ -122,8 +120,8 @@ func (v *Vehicle) findGroundTOIWorld(pose0, pose1 VehiclePose, g WorldGroundQuer
 			low := fixed.Zero
 			high := fixed.One
 
-			// A couple more iterations makes TOI cleaner on uneven triangle ground.
-			for iter := 0; iter < 4; iter++ {
+			// 6 iterations for stable TOI on tessellated triangle slopes.
+			for iter := 0; iter < 6; iter++ {
 				mid := low.Add(high).Mul(fixed.FromFraction(5, 10))
 				aMid := a0.Add(a1.Sub(a0).Scale(mid))
 				hitMid := sampleGroundAtXZ(g.Triangles, aMid.X, aMid.Z, aMid.Y.Add(fixed.FromInt(5)))
@@ -303,18 +301,23 @@ func solveSlopeTOI(y0, y1, z0, z1, baseY, slope, offset fixed.Fixed) (fixed.Fixe
 func (v *Vehicle) resolveGroundImpactVelocity(n geom.Vec3) {
 	vn := v.Velocity.Dot(n)
 	if vn.Cmp(fixed.Zero) < 0 {
-		// Remove only the inward normal component.
 		v.Velocity = v.Velocity.Sub(n.Scale(vn))
 	}
 
-	// Only flatten negative world-Y on nearly-flat ground.
-	// On slopes, tangential motion naturally has +/-Y, especially downhill.
-	if n.Y.Cmp(fixed.FromFraction(95, 100)) > 0 && v.Velocity.Y.Cmp(fixed.Zero) < 0 {
+	// Only zero world-Y on near-flat ground (normal.Y > 0.98).
+	// On slopes, tangential velocity has a natural world-Y component that must
+	// be preserved; zeroing it causes the "tap-floor-get-snapped-tap-again" cycle.
+	if n.Y.Cmp(fixed.FromFraction(98, 100)) > 0 && v.Velocity.Y.Cmp(fixed.Zero) < 0 {
 		v.Velocity.Y = fixed.Zero
 	}
 }
 
 func (v *Vehicle) applyCCDSeparationBias(n geom.Vec3, depth fixed.Fixed) {
-	eps := fixed.FromFraction(2, 1000).Add(depth) // 0.002 + penetration depth
+	// Base separation + penetration depth recovery.
+	eps := fixed.FromFraction(2, 1000).Add(depth)
+	// Extra nudge on slopes so the car doesn't re-penetrate mid-tick.
+	if n.Y.Cmp(fixed.FromFraction(98, 100)) < 0 {
+		eps = eps.Add(fixed.FromFraction(2, 1000))
+	}
 	v.Position = v.Position.Add(n.Scale(eps))
 }
