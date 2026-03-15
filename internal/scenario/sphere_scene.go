@@ -37,6 +37,7 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario(),
 		NewRigidSphereHighSpeedThinWallProjectileScenario(),
 		NewRigidSphereHighSpeedThinWallProjectileCCDScenario(),
+		NewRigidSphereHighSpeedThinWallProjectileMeshCCDScenario(),
 	}
 }
 
@@ -2270,6 +2271,49 @@ func NewRigidSphereHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "CCD projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidSphereHighSpeedThinWallProjectileMeshCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Sphere High Speed Thin Wall Projectile Mesh CCD",
+		Description: "The same high-speed thin-wall projectile setup as scenes 28-29, but resolved with swept sphere CCD directly against the triangle mesh.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewRigidSphereBody3D(
+				fixed.One,
+				fixed.FromFraction(1, 2),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			sphere.Restitution = fixed.FromFraction(1, 5)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+
+			return SceneState{
+				RigidSphere:    sphere,
+				GroundTriangles: makeThinWallSlabTriangles(),
+			}
+		},
+		Step: StepRigidSphereHighSpeedThinWallProjectileMeshCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Mesh CCD projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Mesh CCD projectile still tunneled through the thin wall.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Mesh CCD projectile stayed on the impact side of the thin wall.",
 			}
 		},
 	}

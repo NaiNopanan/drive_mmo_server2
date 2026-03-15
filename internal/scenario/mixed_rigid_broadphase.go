@@ -329,3 +329,39 @@ func StepRigidSphereHighSpeedThinWallProjectileCCDScene(state *SceneState) {
 		Penetration: fixed.Zero,
 	}
 }
+
+func StepRigidSphereHighSpeedThinWallProjectileMeshCCDScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	body := &state.RigidSphere
+	contact := physics.SweepSphereTriangleMesh(
+		body.Motion.Position,
+		body.Motion.Velocity,
+		body.Radius,
+		physics.DefaultTimeStep,
+		state.GroundTriangles,
+	)
+	if !contact.Hit {
+		body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep))
+		return
+	}
+
+	state.EverTouchedGround = true
+	body.Motion.Position = contact.Position
+	normalVelocity := body.Motion.Velocity.Dot(contact.Normal)
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		body.Motion.Velocity = body.Motion.Velocity.Sub(contact.Normal.Scale(normalVelocity.Mul(fixed.One.Add(body.Restitution))))
+	}
+
+	remainingFraction := fixed.One.Sub(contact.TimeOfImpact)
+	body.Motion.Position = body.Motion.Position.Add(body.Motion.Velocity.Scale(physics.DefaultTimeStep.Mul(remainingFraction)))
+	state.LastContact = physics.SphereTriangleContact{
+		Hit:         true,
+		Point:       contact.ContactPoint,
+		Normal:      contact.Normal,
+		Penetration: fixed.Zero,
+	}
+}
