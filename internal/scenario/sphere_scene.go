@@ -28,6 +28,7 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewBoxFrictionFlatSlideScenario(),
 		NewSphereBoxFrictionCollisionScenario(),
 		NewSphereBoxFrictionBounceCollisionScenario(),
+		NewHundredRigidSpheresInBoxScenario(),
 	}
 }
 
@@ -1378,6 +1379,95 @@ func NewSphereBoxFrictionBounceCollisionScenario() ScenarioDefinition {
 	}
 }
 
+func NewHundredRigidSpheresInBoxScenario() ScenarioDefinition {
+	const scenarioTicks = 420
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres In Box",
+		Description: "One hundred rigid spheres fall into an open box, collide with the walls and each other, and settle inside the container.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			radius := fixed.FromFraction(2, 5)
+			spacing := fixed.FromFraction(19, 20)
+			startX := fixed.FromFraction(-171, 50)
+			startZ := fixed.FromFraction(-171, 50)
+			startY := fixed.FromInt(10)
+
+			for layer := 0; layer < 4; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						if len(spheres) == 100 {
+							break
+						}
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 3)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 3)),
+						)
+						sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+						sphere.Restitution = fixed.FromFraction(1, 10)
+						sphere.Friction = fixed.FromFraction(1, 5)
+						spheres = append(spheres, sphere)
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:                  spheres,
+				RigidSphereTouchedGroundSet:   make([]bool, len(spheres)),
+				RigidSphereRotationChangedSet: make([]bool, len(spheres)),
+				GroundTriangles:               makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresInBoxScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres in the box scene.",
+				}
+			}
+			if !state.RigidSphereSphereCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The rigid spheres never collided with each other.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for index, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere fell below the box floor.",
+					}
+				}
+				if index < len(state.RigidSphereTouchedGroundSet) && !state.RigidSphereTouchedGroundSet[index] {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere never touched the container.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "One hundred rigid spheres stayed inside the open box and collided under 3D sphere physics.",
+			}
+		},
+	}
+}
+
 func StepSphereScene(state *SceneState) {
 	if state == nil {
 		return
@@ -1630,6 +1720,75 @@ func StepSphereBoxFrictionBounceCollisionScene(state *SceneState) {
 
 	if contact.Hit {
 		state.SphereBoxCollisionDetected = true
+	}
+}
+
+func StepHundredRigidSpheresInBoxScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = make([]physics.SphereTriangleContact, len(state.RigidSpheres))
+	if len(state.RigidSphereTouchedGroundSet) != len(state.RigidSpheres) {
+		state.RigidSphereTouchedGroundSet = make([]bool, len(state.RigidSpheres))
+	}
+	if len(state.RigidSphereRotationChangedSet) != len(state.RigidSpheres) {
+		state.RigidSphereRotationChangedSet = make([]bool, len(state.RigidSpheres))
+	}
+
+	for index := range state.RigidSpheres {
+		initialOrientation := state.RigidSpheres[index].Orientation
+		result := physics.StepRigidSphereBody3DWithGravity(
+			&state.RigidSpheres[index],
+			physics.DefaultTimeStep,
+			physics.StandardGravity,
+			state.GroundTriangles,
+		)
+		if result.HadContact {
+			state.LastContacts[index] = result.LastContact
+			state.LastContact = result.LastContact
+			state.EverTouchedGround = true
+			state.RigidSphereTouchedGroundSet[index] = true
+		}
+		if state.RigidSpheres[index].Orientation.W != initialOrientation.W ||
+			state.RigidSpheres[index].Orientation.X != initialOrientation.X ||
+			state.RigidSpheres[index].Orientation.Y != initialOrientation.Y ||
+			state.RigidSpheres[index].Orientation.Z != initialOrientation.Z {
+			state.RigidSphereRotationChangedSet[index] = true
+		}
+	}
+
+	for pass := 0; pass < 2; pass++ {
+		for first := 0; first < len(state.RigidSpheres); first++ {
+			for second := first + 1; second < len(state.RigidSpheres); second++ {
+				combinedRestitution := state.RigidSpheres[first].Restitution.Add(state.RigidSpheres[second].Restitution)
+				if combinedRestitution.Cmp(fixed.One) > 0 {
+					combinedRestitution = fixed.One
+				}
+				combinedFriction := state.RigidSpheres[first].Friction.Add(state.RigidSpheres[second].Friction)
+				if combinedFriction.Cmp(fixed.One) > 0 {
+					combinedFriction = fixed.One
+				}
+
+				contact := physics.ResolveRigidSphereSphereContactWithFriction(
+					&state.RigidSpheres[first],
+					&state.RigidSpheres[second],
+					combinedRestitution,
+					combinedFriction,
+				)
+				if contact.Hit {
+					state.RigidSphereSphereCollisionDetected = true
+				}
+			}
+		}
+	}
+
+	if len(state.RigidSpheres) > 0 {
+		state.RigidSphere = state.RigidSpheres[0]
+		if len(state.LastContacts) > 0 {
+			state.LastContact = state.LastContacts[0]
+		}
 	}
 }
 
@@ -2186,6 +2345,54 @@ func makeFlatStripBox(minX, maxX fixed.Fixed) geometry.AxisAlignedBoundingBox {
 		geometry.NewVector3(minX, fixed.FromInt(-1), fixed.FromInt(-10)),
 		geometry.NewVector3(maxX, fixed.Zero, fixed.FromInt(10)),
 	)
+}
+
+func openBoxContainerParameters() (fixed.Fixed, fixed.Fixed, fixed.Fixed, fixed.Fixed, fixed.Fixed) {
+	return fixed.FromInt(-6), fixed.FromInt(6), fixed.FromInt(-6), fixed.FromInt(6), fixed.FromInt(30)
+}
+
+func makeOpenBoxContainerTriangles() []geometry.Triangle {
+	minX, maxX, minZ, maxZ, wallHeight := openBoxContainerParameters()
+	y0 := fixed.Zero
+	y1 := wallHeight
+
+	floorA := geometry.NewVector3(minX, y0, minZ)
+	floorB := geometry.NewVector3(maxX, y0, minZ)
+	floorC := geometry.NewVector3(minX, y0, maxZ)
+	floorD := geometry.NewVector3(maxX, y0, maxZ)
+
+	leftA := geometry.NewVector3(minX, y0, minZ)
+	leftB := geometry.NewVector3(minX, y0, maxZ)
+	leftC := geometry.NewVector3(minX, y1, minZ)
+	leftD := geometry.NewVector3(minX, y1, maxZ)
+
+	rightA := geometry.NewVector3(maxX, y0, minZ)
+	rightB := geometry.NewVector3(maxX, y0, maxZ)
+	rightC := geometry.NewVector3(maxX, y1, minZ)
+	rightD := geometry.NewVector3(maxX, y1, maxZ)
+
+	backA := geometry.NewVector3(minX, y0, minZ)
+	backB := geometry.NewVector3(maxX, y0, minZ)
+	backC := geometry.NewVector3(minX, y1, minZ)
+	backD := geometry.NewVector3(maxX, y1, minZ)
+
+	frontA := geometry.NewVector3(minX, y0, maxZ)
+	frontB := geometry.NewVector3(maxX, y0, maxZ)
+	frontC := geometry.NewVector3(minX, y1, maxZ)
+	frontD := geometry.NewVector3(maxX, y1, maxZ)
+
+	return []geometry.Triangle{
+		geometry.NewTriangle(floorA, floorC, floorB),
+		geometry.NewTriangle(floorC, floorD, floorB),
+		geometry.NewTriangle(leftA, leftC, leftB),
+		geometry.NewTriangle(leftB, leftC, leftD),
+		geometry.NewTriangle(rightA, rightB, rightC),
+		geometry.NewTriangle(rightB, rightD, rightC),
+		geometry.NewTriangle(backA, backB, backC),
+		geometry.NewTriangle(backB, backD, backC),
+		geometry.NewTriangle(frontA, frontC, frontB),
+		geometry.NewTriangle(frontB, frontC, frontD),
+	}
 }
 
 func makeSlopePatchTriangles(patches []smallSlopePatchSpec) []geometry.Triangle {

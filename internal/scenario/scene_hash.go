@@ -106,6 +106,7 @@ func HashSceneState(state SceneState) uint64 {
 	writeVector3(state.RigidSphere.AngularVelocity)
 	writeFixed(state.RigidSphere.InverseInertia)
 	writeBool(state.RigidSphereBounceDetected)
+	writeBool(state.RigidSphereSphereCollisionDetected)
 	writeFixed(state.RigidSpherePeakBounceHeight)
 	writeBool(state.RigidSphereRotationChanged)
 	writeUint64(uint64(len(state.RigidSphereTouchedGroundSet)))

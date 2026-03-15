@@ -462,6 +462,27 @@ func TestSphereBoxFrictionBounceCollisionScenarioBouncesAndSlides(t *testing.T) 
 	}
 }
 
+func TestHundredRigidSpheresInBoxScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresInBoxScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 100 {
+		t.Fatalf("expected 100 rigid spheres at setup, got %d", len(runner.State.RigidSpheres))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected hundred-rigid-spheres-in-box scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.RigidSphereSphereCollisionDetected {
+		t.Fatalf("expected rigid spheres to collide with each other inside the box")
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

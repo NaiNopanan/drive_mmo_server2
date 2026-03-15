@@ -410,6 +410,10 @@ func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
 	}
 }
 
+func shouldDrawObjectLabels(definition scenario.ScenarioDefinition) bool {
+	return definition.Name != "Hundred Rigid Spheres In Box"
+}
+
 func sceneSpheres(state scenario.SceneState) []physics.SphereBody {
 	if len(state.Spheres) > 0 {
 		return state.Spheres
@@ -780,7 +784,9 @@ func main() {
 		drawContactDebugList(sceneContacts(runner.State))
 		rl.EndMode3D()
 
-		drawSceneObjectLabels(camera, runner.State)
+		if shouldDrawObjectLabels(definitions[currentIndex]) {
+			drawSceneObjectLabels(camera, runner.State)
+		}
 		drawOverlayWithCameraMode(definitions[currentIndex], runner, viewMode)
 
 		rl.EndDrawing()
