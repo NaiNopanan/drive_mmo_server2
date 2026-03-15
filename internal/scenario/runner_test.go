@@ -535,6 +535,60 @@ func TestHundredBoxesInBoxAngleScenarioStaysContained(t *testing.T) {
 	}
 }
 
+func TestFiftyRigidSpheresAndFiftyRigidBoxesInBoxScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewFiftyRigidSpheresAndFiftyRigidBoxesInBoxScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 50 || len(runner.State.RigidBoxes) != 50 {
+		t.Fatalf("expected 50 rigid spheres and 50 rigid boxes at setup, got spheres=%d boxes=%d", len(runner.State.RigidSpheres), len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected mixed rigid-body box scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected rigid spheres and rigid boxes to collide")
+	}
+	if !runner.State.RigidSphereSphereCollisionDetected {
+		t.Fatalf("expected rigid spheres to collide with each other")
+	}
+	if !runner.State.RigidBoxBoxCollisionDetected {
+		t.Fatalf("expected rigid boxes to collide with each other")
+	}
+}
+
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 100 || len(runner.State.RigidBoxes) != 100 {
+		t.Fatalf("expected 100 rigid spheres and 100 rigid boxes at setup, got spheres=%d boxes=%d", len(runner.State.RigidSpheres), len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected dense mixed rigid-body box scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected rigid spheres and rigid boxes to collide")
+	}
+	if !runner.State.RigidSphereSphereCollisionDetected {
+		t.Fatalf("expected rigid spheres to collide with each other")
+	}
+	if !runner.State.RigidBoxBoxCollisionDetected {
+		t.Fatalf("expected rigid boxes to collide with each other")
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)
