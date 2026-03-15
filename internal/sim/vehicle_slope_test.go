@@ -18,6 +18,22 @@ func testSlopeGround() SlopeGround {
 	}
 }
 
+// slopeHeightProxy measures chassis height relative to the analytic slope
+// at the vehicle's current Z. It is not a true suspension length, but it is
+// a useful regression proxy: if the car suddenly "sinks" into the slope,
+// this value will collapse sharply compared to its settled baseline.
+func slopeHeightProxy(v *Vehicle, g SlopeGround) fixed.Fixed {
+	groundY := g.BaseY.Add(g.Slope.Mul(v.Position.Z))
+	return v.Position.Y.Sub(groundY)
+}
+
+func settleVehicleOnSlope(v *Vehicle, g GroundQuery, dt fixed.Fixed, ticks int) {
+	v.Input = VehicleInput{}
+	for i := 0; i < ticks; i++ {
+		v.Step(dt, g)
+	}
+}
+
 // TestSlope_VehicleClimbsWithFullThrottle verifies the vehicle can climb
 // the slope continuously when full throttle is applied.
 func TestSlope_VehicleClimbsWithFullThrottle(t *testing.T) {
@@ -253,5 +269,166 @@ func TestSlope_SteeringStability(t *testing.T) {
 	// In a smooth turn, jitter should be near zero (maybe 1-2 for initial kick, but not continuous)
 	if jitterCount > 10 {
 		t.Errorf("excessive steering vibration on slope: jitterCount=%v expected < 10", jitterCount)
+	}
+}
+
+// TestSlope_NoRapidGroundContactFlappingWhileClimbing catches a common CCD/contact bug:
+// while climbing a slope under steady throttle, the vehicle should not rapidly
+// alternate between "stable ground contact" and "not grounded enough".
+func TestSlope_NoRapidGroundContactFlappingWhileClimbing(t *testing.T) {
+	g := testSlopeGround()
+	dt := fixed.FromFraction(1, 60)
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-20)))
+
+	settleVehicleOnSlope(&v, g, dt, 180)
+
+	// Build a little speed first so the contact system is exercised under load.
+	for i := 0; i < 60; i++ {
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(5, 10)}
+		v.Step(dt, g)
+	}
+
+	stableGround := v.GroundedWheels >= 2
+	flipCount := 0
+	unstableTicks := 0
+	samples := 180
+
+	for i := 0; i < samples; i++ {
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+		v.Step(dt, g)
+
+		nowStable := v.GroundedWheels >= 2
+		if nowStable != stableGround {
+			flipCount++
+		}
+		if !nowStable {
+			unstableTicks++
+		}
+		stableGround = nowStable
+	}
+
+	t.Logf("Ground-contact flaps over %d ticks: %d", samples, flipCount)
+	t.Logf("Ticks with <2 grounded wheels: %d", unstableTicks)
+
+	// We allow some loss of contact, but not repeated flap/jitter behavior.
+	if flipCount > 12 {
+		t.Fatalf("excessive ground-contact flapping while climbing slope: flips=%d expected<=12", flipCount)
+	}
+	if unstableTicks > 36 { // >20% of the sampled ticks
+		t.Fatalf("vehicle spent too long in unstable contact while climbing slope: unstableTicks=%d expected<=36", unstableTicks)
+	}
+}
+
+// TestSlope_NoBounceBurstOrSinkDuringClimb catches the "สั้นรัว/เด้งรัว"
+// and "จม slope" style failure. On a smooth analytic slope with steady throttle,
+// chassis height relative to the slope should stay in a bounded band and vertical
+// velocity should not repeatedly flip sign with meaningful magnitude.
+func TestSlope_NoBounceBurstOrSinkDuringClimb(t *testing.T) {
+	g := testSlopeGround()
+	dt := fixed.FromFraction(1, 60)
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-20)))
+
+	settleVehicleOnSlope(&v, g, dt, 180)
+	baseProxy := slopeHeightProxy(&v, g)
+	startZ := v.Position.Z
+
+	prevVy := v.Velocity.Y
+	significantFlipCount := 0
+	minProxy := baseProxy
+
+	for i := 0; i < 180; i++ {
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+		v.Step(dt, g)
+
+		proxy := slopeHeightProxy(&v, g)
+		if proxy.Cmp(minProxy) < 0 {
+			minProxy = proxy
+		}
+
+		// Count only meaningful vertical sign flips, not tiny noise near zero.
+		if prevVy.Abs().Cmp(fixed.FromFraction(2, 10)) > 0 &&
+			v.Velocity.Y.Abs().Cmp(fixed.FromFraction(2, 10)) > 0 {
+			if (prevVy.Cmp(fixed.Zero) > 0 && v.Velocity.Y.Cmp(fixed.Zero) < 0) ||
+				(prevVy.Cmp(fixed.Zero) < 0 && v.Velocity.Y.Cmp(fixed.Zero) > 0) {
+				significantFlipCount++
+			}
+		}
+		prevVy = v.Velocity.Y
+	}
+
+	deltaZ := v.Position.Z.Sub(startZ)
+	proxyDrop := baseProxy.Sub(minProxy)
+
+	t.Logf("Slope climb deltaZ: %v", deltaZ)
+	t.Logf("Base height proxy: %v", baseProxy)
+	t.Logf("Min height proxy during climb: %v", minProxy)
+	t.Logf("Height proxy drop: %v", proxyDrop)
+	t.Logf("Significant vertical velocity sign flips: %d", significantFlipCount)
+
+	if deltaZ.Cmp(fixed.FromInt(3)) < 0 {
+		t.Fatalf("vehicle did not make enough uphill progress during bounce/sink test: deltaZ=%v expected>=3m", deltaZ)
+	}
+
+	// If the proxy drops too much from its settled baseline, the chassis likely
+	// collapsed/sank relative to the slope.
+	if proxyDrop.Cmp(fixed.One) > 0 {
+		t.Fatalf("vehicle appears to sink too far into slope during climb: proxyDrop=%v expected<=1.0", proxyDrop)
+	}
+
+	// Too many meaningful Vy sign flips indicates bounce burst / chatter.
+	if significantFlipCount > 14 {
+		t.Fatalf("excessive vertical bounce burst while climbing slope: significantFlipCount=%d expected<=14", significantFlipCount)
+	}
+}
+
+// TestTriangleSlope_SteeringDoesNotDropOutWhileClimbing catches the case where
+// the vehicle initially turns, then suddenly stops responding to steering on a
+// real triangle slope (often perceived as "จมแล้วคุมไม่ได้").
+func TestTriangleSlope_SteeringDoesNotDropOutWhileClimbing(t *testing.T) {
+	g := WorldGroundQuery{Triangles: GroundSlopeSmall()}
+	dt := fixed.FromFraction(1, 60)
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-20)))
+
+	settleVehicleOnSlope(&v, g, dt, 180)
+
+	// Gain some forward speed before the steering windows begin.
+	for i := 0; i < 60; i++ {
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(5, 10)}
+		v.Step(dt, g)
+	}
+
+	lastYaw := v.Yaw
+	lastX := v.Position.X
+	weakWindows := 0
+	windowSize := 30
+
+	for i := 0; i < 180; i++ {
+		v.Input = VehicleInput{
+			Throttle: fixed.FromFraction(3, 5),
+			Steer:    fixed.One,
+		}
+		v.Step(dt, g)
+
+		if (i+1)%windowSize == 0 {
+			yawDelta := v.Yaw.Sub(lastYaw)
+			xDelta := v.Position.X.Sub(lastX)
+
+			t.Logf("window %d: yawDelta=%v xDelta=%v groundedWheels=%d onGround=%v",
+				(i+1)/windowSize, yawDelta, xDelta, v.GroundedWheels, v.OnGround)
+
+			// We check for any meaningful yaw response (absolute delta) rather than
+			// assuming the vehicle can easily turn "right" against the slope's
+			// specific triangle normal layout.
+			if yawDelta.Abs().Cmp(fixed.FromFraction(5, 1000)) <= 0 { // 0.005 rad per window
+				weakWindows++
+			}
+
+			lastYaw = v.Yaw
+			lastX = v.Position.X
+		}
+	}
+
+	if weakWindows > 2 {
+		t.Fatalf("steering response dropped out too often while climbing triangle slope: weakWindows=%d expected<=2", weakWindows)
 	}
 }

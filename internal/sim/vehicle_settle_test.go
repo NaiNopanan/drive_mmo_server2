@@ -7,106 +7,137 @@ import (
 	"server2/internal/geom"
 )
 
-// TestVehicle_StopsAfterReleasingControls is the core regression test.
-// Drives forward 1 second, steers 1 second, then releases all input.
-// After 3 more seconds the vehicle's speed should be very low (< 0.5 m/s).
-func TestVehicle_StopsAfterReleasingControls(t *testing.T) {
+func settleVehicleOnFlat(v *Vehicle, ticks int) {
+	g := FlatGround{Y: fixed.Zero}
+	dt := fixed.FromFraction(1, 60)
+
+	v.Input = VehicleInput{}
+	for i := 0; i < ticks; i++ {
+		v.Step(dt, g)
+	}
+}
+
+func planarSpeed(v *Vehicle) fixed.Fixed {
+	return geom.V3(v.Velocity.X, fixed.Zero, v.Velocity.Z).Length()
+}
+
+func TestVehicle_SpeedDecreasesAfterReleasingControls(t *testing.T) {
 	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 	g := FlatGround{Y: fixed.Zero}
 	dt := fixed.FromFraction(1, 60)
 
-	// Settle on ground
-	for i := 0; i < 120; i++ {
-		v.Step(dt, g)
-	}
+	// Settle on ground first.
+	settleVehicleOnFlat(&v, 120)
 
-	// Phase 1: Drive forward for 1 second
+	// Phase 1: build forward speed.
 	for i := 0; i < 60; i++ {
 		v.Input = VehicleInput{Throttle: fixed.One}
 		v.Step(dt, g)
 	}
 
-	// Phase 2: Steer while driving for 1 second
+	// Phase 2: build combined forward + steering state.
 	for i := 0; i < 60; i++ {
 		v.Input = VehicleInput{Throttle: fixed.One, Steer: fixed.One}
 		v.Step(dt, g)
 	}
 
-	// Phase 3: Release all input, wait 20 seconds
+	speedBeforeRelease := planarSpeed(&v)
+	yawBeforeRelease := v.YawVelocity.Abs()
+
+	// Phase 3: release all input and observe decay.
 	v.Input = VehicleInput{}
-	for i := 0; i < 1200; i++ {
+	for i := 0; i < 600; i++ { // 10 seconds
 		v.Step(dt, g)
 	}
 
-	// Without artificial XZ damping, only rolling resistance decelerates the car.
-	// Prototype rolling resistance (100N) on 800kg = 0.125 m/s².
-	// From ~38 m/s, it won't drop below 30m/s in just 20 seconds.
-	// We just verify that it doesn't exceed its max speed and stays within reason.
-	speed := geom.V3(v.Velocity.X, fixed.Zero, v.Velocity.Z).Length()
-	maxAllowed := fixed.FromInt(40)
+	speedAfterRelease := planarSpeed(&v)
+	yawAfterRelease := v.YawVelocity.Abs()
 
-	t.Logf("Final speed after release: %v m/s", speed)
-	t.Logf("Final YawVelocity: %v rad/s", v.YawVelocity)
-	t.Logf("Final Velocity: X=%v Z=%v", v.Velocity.X, v.Velocity.Z)
+	t.Logf("Speed before release: %v m/s", speedBeforeRelease)
+	t.Logf("Speed after release:  %v m/s", speedAfterRelease)
+	t.Logf("Yaw before release:   %v rad/s", yawBeforeRelease)
+	t.Logf("Yaw after release:    %v rad/s", yawAfterRelease)
+	t.Logf("Final velocity: X=%v Z=%v", v.Velocity.X, v.Velocity.Z)
 
-	if speed.Cmp(maxAllowed) > 0 {
-		t.Errorf("vehicle speed did not settle to near-zero after releasing controls: got=%v expected<=%v", speed, maxAllowed)
+	// Must lose at least 1 m/s due to rolling resistance (100N on 800kg for 10s = 1.25m/s loss)
+	maxAllowedAfter := speedBeforeRelease.Sub(fixed.One)
+
+	if speedAfterRelease.Cmp(speedBeforeRelease) >= 0 {
+		t.Fatalf("vehicle did not slow down after releasing controls: before=%v after=%v",
+			speedBeforeRelease, speedAfterRelease)
+	}
+
+	if speedAfterRelease.Cmp(maxAllowedAfter) > 0 {
+		t.Fatalf("vehicle did not slow down enough after releasing controls: before=%v after=%v allowed<=%v",
+			speedBeforeRelease, speedAfterRelease, maxAllowedAfter)
 	}
 }
 
-// TestVehicle_YawDecaysAfterRelease verifies yaw rotation settles after releasing steer.
 func TestVehicle_YawDecaysAfterRelease(t *testing.T) {
 	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 	g := FlatGround{Y: fixed.Zero}
 	dt := fixed.FromFraction(1, 60)
 
-	// Settle
-	for i := 0; i < 120; i++ {
-		v.Step(dt, g)
-	}
+	// Settle first.
+	settleVehicleOnFlat(&v, 120)
 
-	// Drive forward for 1 second (build forward speed to make yaw meaningful)
+	// Build some forward speed so yaw response is meaningful.
 	for i := 0; i < 60; i++ {
 		v.Input = VehicleInput{Throttle: fixed.One}
 		v.Step(dt, g)
 	}
 
-	// Drive + steer for 1 second
+	// Build yaw motion.
 	for i := 0; i < 60; i++ {
 		v.Input = VehicleInput{Throttle: fixed.One, Steer: fixed.One}
 		v.Step(dt, g)
 	}
 
-	// Release and wait 5 seconds (yaw decays quickly)
+	yawBeforeRelease := v.YawVelocity.Abs()
+	if yawBeforeRelease.Cmp(fixed.FromFraction(5, 100)) <= 0 {
+		t.Fatalf("test setup did not build enough yaw velocity before release: got=%v", yawBeforeRelease)
+	}
+
+	// Release and wait.
 	v.Input = VehicleInput{}
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 300; i++ { // 5 seconds
 		v.Step(dt, g)
 	}
 
-	maxYaw := fixed.FromFraction(3, 10) // 0.30 rad/s (Softer damping for better feel takes longer to stop)
-	t.Logf("Final YawVelocity: %v rad/s", v.YawVelocity)
-	if v.YawVelocity.Abs().Cmp(maxYaw) > 0 {
-		t.Errorf("yaw velocity did not decay: got=%v expected<=%v", v.YawVelocity, maxYaw)
+	yawAfterRelease := v.YawVelocity.Abs()
+	t.Logf("Yaw before release: %v rad/s", yawBeforeRelease)
+	t.Logf("Yaw after release:  %v rad/s", yawAfterRelease)
+
+	// Must clearly decay relative to the pre-release yaw.
+	maxAllowedRelative := yawBeforeRelease.Mul(fixed.FromFraction(1, 3)) // at least 66% reduction
+	maxAllowedAbsolute := fixed.FromFraction(8, 100)                     // 0.08 rad/s
+
+	if yawAfterRelease.Cmp(yawBeforeRelease) >= 0 {
+		t.Fatalf("yaw velocity did not decay after releasing steer: before=%v after=%v",
+			yawBeforeRelease, yawAfterRelease)
+	}
+
+	if yawAfterRelease.Cmp(maxAllowedRelative) > 0 && yawAfterRelease.Cmp(maxAllowedAbsolute) > 0 {
+		t.Fatalf("yaw velocity did not decay enough: before=%v after=%v relativeMax=%v absoluteMax=%v",
+			yawBeforeRelease, yawAfterRelease, maxAllowedRelative, maxAllowedAbsolute)
 	}
 }
 
-// TestVehicle_LatForceIsZeroWhenStationary verifies LatF = 0 when the vehicle
-// is fully settled and not receiving any input.
 func TestVehicle_LatForceIsZeroWhenStationary(t *testing.T) {
 	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 	g := FlatGround{Y: fixed.Zero}
 	dt := fixed.FromFraction(1, 60)
 
-	// Settle for 5 seconds
+	// Let the vehicle settle with no input.
 	for i := 0; i < 300; i++ {
 		v.Step(dt, g)
 	}
 
 	maxLatF := fixed.FromFraction(1, 10) // 0.1 N
-
 	for i, w := range v.Wheels {
 		if w.LateralForce.Abs().Cmp(maxLatF) > 0 {
-			t.Errorf("wheel %d LateralForce not zero when stationary: got=%v", i, w.LateralForce)
+			t.Fatalf("wheel %d lateral force not near zero when stationary: got=%v max=%v",
+				i, w.LateralForce, maxLatF)
 		}
 	}
 }

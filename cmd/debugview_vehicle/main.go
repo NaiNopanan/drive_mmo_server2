@@ -364,7 +364,7 @@ func main() {
 				target.Steer = fixed.One
 			}
 
-			// แยก brake ไปที่ Control
+			// แยก brake ไปที่ Ctrl จะได้ไม่ชนกับ reverse
 			if rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl) {
 				target.Brake = fixed.One
 			}

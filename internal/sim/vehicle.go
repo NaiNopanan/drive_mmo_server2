@@ -109,8 +109,8 @@ func DefaultTuning() VehicleTuning {
 
 	// inertia = 1/12 * mass * (track^2 + base^2)
 	inertia := mass.Mul(track.Mul(track).Add(base.Mul(base))).Div(fixed.FromInt(12))
-	// Scale inertia for balance (30% is agile yet stable with speed-sensitive steering)
-	inertia = inertia.Mul(fixed.FromFraction(30, 100))
+	// Scale inertia for balance (50% provides better high-speed stability while remaining agile)
+	inertia = inertia.Mul(fixed.FromFraction(50, 100))
 
 	return VehicleTuning{
 		Mass:          mass,
@@ -136,7 +136,7 @@ func DefaultTuning() VehicleTuning {
 		DriveForce:        fixed.FromInt(10000),
 		BrakeForce:        fixed.FromInt(12000),
 		RollingResistance: fixed.FromInt(800),
-		LateralGrip:       fixed.FromInt(10000), // ปรับลงมาใช้ร่วมกับ Smoothing
+		LateralGrip:       fixed.FromInt(6000), // ปรับลงมาเพื่อลด High-Speed Jitter
 
 		MaxSpeed: fixed.FromInt(40),
 	}
@@ -148,7 +148,7 @@ func PrototypeTuning() VehicleTuning {
 	t := DefaultTuning()
 	t.MaxSpeed = fixed.FromInt(100)
 	t.RollingResistance = fixed.FromInt(100)
-	t.LateralGrip = fixed.FromInt(10000)
+	t.LateralGrip = fixed.FromInt(6000)
 	return t
 }
 
