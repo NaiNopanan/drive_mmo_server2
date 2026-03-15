@@ -1,65 +1,69 @@
-package fixed
+package fixed_test
 
-import "testing"
+import (
+	"testing"
 
-func TestFixedAddSub(t *testing.T) {
-	a := FromInt(10)
-	b := FromInt(3)
+	"server2/internal/fixed"
+)
 
-	if got := a.Add(b); got != FromInt(13) {
-		t.Fatalf("add failed: got=%v want=%v", got, FromInt(13))
+const maxSignedInt64 = int64(^uint64(0) >> 1)
+
+func TestFixedAddAndSubtract(t *testing.T) {
+	a := fixed.FromInt(10)
+	b := fixed.FromInt(3)
+
+	if got := a.Add(b); got != fixed.FromInt(13) {
+		t.Fatalf("add failed: got=%v want=%v", got, fixed.FromInt(13))
 	}
 
-	if got := a.Sub(b); got != FromInt(7) {
-		t.Fatalf("sub failed: got=%v want=%v", got, FromInt(7))
+	if got := a.Sub(b); got != fixed.FromInt(7) {
+		t.Fatalf("sub failed: got=%v want=%v", got, fixed.FromInt(7))
 	}
 }
 
-func TestFixedMul(t *testing.T) {
-	a := FromFraction(3, 2) // 1.5
-	b := FromInt(2)
+func TestFixedMultiply(t *testing.T) {
+	a := fixed.FromFraction(3, 2)
+	b := fixed.FromInt(2)
 
 	got := a.Mul(b)
-	want := FromInt(3)
-
+	want := fixed.FromInt(3)
 	if got != want {
-		t.Fatalf("mul failed: got=%v want=%v", got, want)
+		t.Fatalf("multiply failed: got=%v want=%v", got, want)
 	}
 }
 
-func TestFixedNegative(t *testing.T) {
-	a := FromFraction(-3, 2) // -1.5
-	b := FromInt(2)
+func TestFixedMultiplyNegative(t *testing.T) {
+	a := fixed.FromFraction(-3, 2)
+	b := fixed.FromInt(2)
 
 	got := a.Mul(b)
-	want := FromInt(-3)
-
+	want := fixed.FromInt(-3)
 	if got != want {
-		t.Fatalf("negative mul failed: got=%v want=%v", got, want)
+		t.Fatalf("negative multiply failed: got=%v want=%v", got, want)
 	}
 }
 
-func TestOverflow(t *testing.T) {
+func TestFixedAddPanicsOnOverflow(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Errorf("The code did not panic on overflow")
+			t.Fatalf("expected panic on overflow")
 		}
 	}()
 
-	a := FromRaw(maxInt64)
-	b := FromInt(1)
-	a.Add(b) // Should panic
+	a := fixed.FromRaw(maxSignedInt64)
+	b := fixed.FromInt(1)
+	_ = a.Add(b)
 }
 
-func TestRawBitExactness(t *testing.T) {
-	f1 := FromFraction(1, 10)
-	f2 := FromFraction(1, 10)
-	
+func TestFromFractionIsBitExact(t *testing.T) {
+	f1 := fixed.FromFraction(1, 10)
+	f2 := fixed.FromFraction(1, 10)
+
 	if f1.Raw() != f2.Raw() {
 		t.Fatalf("FromFraction(1, 10) is not deterministic: %d != %d", f1.Raw(), f2.Raw())
 	}
-	
-	half := FromFraction(1, 2)
+
+	half := fixed.FromFraction(1, 2)
 	if half.Raw() != 0x0000000080000000 {
 		t.Fatalf("0.5 raw bit mismatch: got %x want %x", half.Raw(), 0x0000000080000000)
 	}
