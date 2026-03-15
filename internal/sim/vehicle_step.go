@@ -156,6 +156,10 @@ func (v *Vehicle) applyPostStepDamping() {
 		keep := fixed.FromFraction(88, 100)
 		if steerActive {
 			keep = fixed.FromFraction(92, 100)
+			if v.Input.Throttle.Abs().Cmp(fixed.FromFraction(2, 100)) < 0 &&
+				v.Input.Brake.Abs().Cmp(fixed.FromFraction(2, 100)) < 0 {
+				keep = fixed.FromFraction(97, 100)
+			}
 		}
 
 		targetLateral := lateralSpeed.Mul(keep)

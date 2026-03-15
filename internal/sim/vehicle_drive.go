@@ -164,8 +164,10 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 
 	// Soft low-speed hold to prevent micro-creep / sink-feel on slopes when
 	// neither throttle nor brake is applied (parked or idle on incline).
+	steerActive := v.Input.Steer.Abs().Cmp(fixed.FromFraction(2, 100)) >= 0
 	if v.Input.Throttle.Abs().Cmp(fixed.FromFraction(1, 100)) < 0 &&
 		v.Input.Brake.Abs().Cmp(fixed.FromFraction(1, 100)) < 0 &&
+		!steerActive &&
 		w.LongSpeed.Abs().Cmp(fixed.FromFraction(3, 10)) < 0 {
 		holdForce := w.LongSpeed.Mul(v.Tuning.BrakeForce.Div(fixed.FromInt(8))).Neg()
 		totalLong = totalLong.Add(holdForce)

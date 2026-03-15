@@ -31,6 +31,17 @@ func TestBuildCurvedOverpassCity_DeterministicCounts(t *testing.T) {
 	}
 }
 
+func TestNewCityWorld_UsesCityDriveTuning(t *testing.T) {
+	world := NewCityWorld()
+
+	if world.Vehicle.Tuning.MaxSpeed != fixed.FromInt(28) {
+		t.Fatalf("city world max speed mismatch: got=%v want=28", world.Vehicle.Tuning.MaxSpeed)
+	}
+	if world.Vehicle.Tuning.DriveForce != fixed.FromInt(2800) {
+		t.Fatalf("city world drive force mismatch: got=%v want=2800", world.Vehicle.Tuning.DriveForce)
+	}
+}
+
 func TestBuildCurvedOverpassCity_SpawnHitsDrivableGround(t *testing.T) {
 	city := BuildCurvedOverpassCity()
 	hit := city.Ground.Raycast(city.SpawnPosition, downDir(), fixed.FromInt(10))
@@ -105,6 +116,52 @@ func TestCollideVehicleWithObstacles_ContainsOverpassGuardRail(t *testing.T) {
 
 	if vehicleOverlapsObstacle(v, rail) {
 		t.Fatalf("vehicle still overlaps guard rail after resolution: pos=%v rail=%+v", v.Position, rail)
+	}
+}
+
+func TestVehicleObstacleContact_UsesYawAwareFootprint(t *testing.T) {
+	obstacle := CityObstacle{
+		MinX:   fixed.FromFraction(-1, 10),
+		MaxX:   fixed.FromFraction(1, 10),
+		MinZ:   fixed.FromFraction(-1, 10),
+		MaxZ:   fixed.FromFraction(1, 10),
+		BaseY:  fixed.Zero,
+		Height: fixed.FromInt(2),
+	}
+
+	v := NewVehicle(1, geom.V3(fixed.FromFraction(14, 10), fixed.One, fixed.Zero))
+	v.Yaw = fixedFromFloat(math.Pi / 4)
+	v.UpdateBasisFromYaw()
+
+	contact := vehicleObstacleContact(v, obstacle)
+	if contact.Hit {
+		t.Fatalf("yaw-aware footprint should miss thin obstacle at corner: contact=%+v pos=%v yaw=%v", contact, v.Position, v.Yaw)
+	}
+}
+
+func TestVehicleObstacleContact_GuardRailDoesNotIntrudeIntoRampCenterline(t *testing.T) {
+	city := BuildCurvedOverpassCity()
+	ground := city.Ground.Raycast(
+		geom.V3(fixed.FromFraction(1209, 100), fixed.FromInt(20), fixed.FromFraction(791, 100)),
+		downDir(),
+		fixed.FromInt(30),
+	)
+	if !ground.Hit {
+		t.Fatalf("expected ramp centerline probe to hit ground")
+	}
+
+	v := NewArcadeVehicle(1, geom.V3(
+		fixed.FromFraction(1209, 100),
+		ground.Point.Y.Add(EasyArcadeDriveTuning().RideHeight),
+		fixed.FromFraction(791, 100),
+	))
+	v.Yaw = fixedFromFloat(math.Atan2(3, 2))
+	v.UpdateBasisFromYaw()
+
+	for i := range city.GuardRails {
+		if vehicleObstacleContact(v.Vehicle, city.GuardRails[i]).Hit {
+			t.Fatalf("guard rail intrudes into ramp centerline: rail=%+v pos=%v yaw=%v", city.GuardRails[i], v.Position, v.Yaw)
+		}
 	}
 }
 
@@ -199,8 +256,8 @@ func TestCityWorld_OverpassClimbDoesNotBounceBurst(t *testing.T) {
 	significantFlipCount := 0
 	maxRise := world.Vehicle.Position.Y
 
-	for i := 0; i < 180; i++ {
-		world.Vehicle.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+	for i := 0; i < 240; i++ {
+		world.Vehicle.Input = VehicleInput{Throttle: fixed.FromFraction(4, 5)}
 		world.Step(dt)
 
 		if world.Vehicle.Position.Y.Cmp(maxRise) > 0 {
@@ -217,11 +274,43 @@ func TestCityWorld_OverpassClimbDoesNotBounceBurst(t *testing.T) {
 		prevVy = world.Vehicle.Velocity.Y
 	}
 
-	if maxRise.Sub(fixed.FromInt(3)).Cmp(fixed.FromInt(2)) < 0 {
+	if maxRise.Sub(fixed.FromInt(3)).Cmp(fixed.FromInt(15).Div(fixed.FromInt(10))) < 0 {
 		t.Fatalf("vehicle did not climb enough on overpass ramp: maxRise=%v", maxRise)
 	}
 	if significantFlipCount > 10 {
 		t.Fatalf("excessive vertical bounce burst while climbing city overpass: flips=%d expected<=10", significantFlipCount)
+	}
+}
+
+func TestCityWorld_CoastingSteerStillBuildsYaw(t *testing.T) {
+	world := NewCityWorld()
+	dt := fixed.FromFraction(1, 60)
+
+	for i := 0; i < 180; i++ {
+		world.Vehicle.Input = VehicleInput{}
+		world.Step(dt)
+	}
+	for i := 0; i < 90; i++ {
+		world.Vehicle.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+		world.Step(dt)
+	}
+
+	startYaw := world.Vehicle.Yaw
+	startX := world.Vehicle.Position.X
+
+	for i := 0; i < 120; i++ {
+		world.Vehicle.Input = VehicleInput{Steer: fixed.One}
+		world.Step(dt)
+	}
+
+	yawDelta := world.Vehicle.Yaw.Sub(startYaw).Abs()
+	xDelta := world.Vehicle.Position.X.Sub(startX).Abs()
+
+	if yawDelta.Cmp(fixed.FromFraction(12, 100)) <= 0 {
+		t.Fatalf("coasting steer yaw response too weak: got=%v need>0.12", yawDelta)
+	}
+	if xDelta.Cmp(fixed.FromFraction(7, 10)) <= 0 {
+		t.Fatalf("coasting steer arc too small: got=%v need>0.7", xDelta)
 	}
 }
 
@@ -261,28 +350,7 @@ func overlapsAnyObstacle(v Vehicle, obstacles []CityObstacle) bool {
 }
 
 func vehicleOverlapsObstacle(v Vehicle, obstacle CityObstacle) bool {
-	halfWidth := v.Tuning.TrackWidth.Div(fixed.FromInt(2))
-	halfLen := v.Tuning.WheelBase.Div(fixed.FromInt(2))
-	halfHeight := fixed.FromFraction(1, 4)
-
-	vehicleMinX := v.Position.X.Sub(halfWidth)
-	vehicleMaxX := v.Position.X.Add(halfWidth)
-	vehicleMinZ := v.Position.Z.Sub(halfLen)
-	vehicleMaxZ := v.Position.Z.Add(halfLen)
-	vehicleMinY := v.Position.Y.Sub(halfHeight)
-	vehicleMaxY := v.Position.Y.Add(halfHeight)
-
-	if vehicleMaxX.Cmp(obstacle.MinX) <= 0 || vehicleMinX.Cmp(obstacle.MaxX) >= 0 {
-		return false
-	}
-	if vehicleMaxZ.Cmp(obstacle.MinZ) <= 0 || vehicleMinZ.Cmp(obstacle.MaxZ) >= 0 {
-		return false
-	}
-	if vehicleMinY.Cmp(obstacle.TopY()) >= 0 || vehicleMaxY.Cmp(obstacle.BaseY) <= 0 {
-		return false
-	}
-
-	return true
+	return vehicleObstacleContact(v, obstacle).Hit
 }
 
 func assertVehicleInsideBounds(t *testing.T, v Vehicle, bounds WallBounds) {

@@ -207,6 +207,56 @@ func approachFixed(current, target, maxDelta fixed.Fixed) fixed.Fixed {
 	return current
 }
 
+func formatFixed(v fixed.Fixed) string {
+	return v.String()
+}
+
+func formatVec3ForLog(v geom.Vec3) string {
+	return fmt.Sprintf("(%s,%s,%s)", formatFixed(v.X), formatFixed(v.Y), formatFixed(v.Z))
+}
+
+func formatVehicleInputForLog(in sim.VehicleInput) string {
+	return fmt.Sprintf("(T=%s B=%s S=%s)", formatFixed(in.Throttle), formatFixed(in.Brake), formatFixed(in.Steer))
+}
+
+func logScenarioStart(s sim.ArcadeDebugScenario) {
+	fmt.Printf("[arcade scenario] start id=%s name=%q duration=%d desc=%q\n", s.ID, s.Name, s.DurationTicks, s.Description)
+}
+
+func logScenarioTick(s sim.ArcadeDebugScenario, tick int, world sim.ArcadeCityWorld) {
+	v := world.Vehicle.Vehicle
+	speed := geom.V3(v.Velocity.X, fixed.Zero, v.Velocity.Z).Length()
+	fmt.Printf(
+		"[arcade scenario] id=%s tick=%03d/%03d input=%s pos=%s vel=%s speed=%s up=%s on_ground=%v grounded=%d\n",
+		s.ID,
+		tick,
+		s.DurationTicks,
+		formatVehicleInputForLog(world.Vehicle.Input),
+		formatVec3ForLog(v.Position),
+		formatVec3ForLog(v.Velocity),
+		formatFixed(speed),
+		formatVec3ForLog(v.UpWS),
+		v.OnGround,
+		v.GroundedWheels,
+	)
+}
+
+func logScenarioStop(s sim.ArcadeDebugScenario, tick int, world sim.ArcadeCityWorld, reason string) {
+	v := world.Vehicle.Vehicle
+	fmt.Printf(
+		"[arcade scenario] stop id=%s tick=%03d/%03d reason=%s pos=%s vel=%s up=%s on_ground=%v grounded=%d\n",
+		s.ID,
+		tick,
+		s.DurationTicks,
+		reason,
+		formatVec3ForLog(v.Position),
+		formatVec3ForLog(v.Velocity),
+		formatVec3ForLog(v.UpWS),
+		v.OnGround,
+		v.GroundedWheels,
+	)
+}
+
 func drawTriangleFill(t geom.Triangle, color rl.Color) {
 	rl.DrawTriangle3D(vecToRL(t.A), vecToRL(t.B), vecToRL(t.C), color)
 }
@@ -260,8 +310,14 @@ func drawVehicle(v sim.Vehicle) {
 		def := v.WheelDefs[wi]
 
 		anchorWS := v.Position.Add(v.LocalToWorld(def.LocalAnchor))
-		rayOrigin := anchorWS.Add(geom.V3(fixed.Zero, v.Tuning.SuspensionMaxRaise, fixed.Zero))
-		center := rayOrigin.Add(geom.V3(fixed.Zero, w.ContactDistance.Neg(), fixed.Zero))
+		center := anchorWS.Add(geom.V3(
+			fixed.Zero,
+			v.Tuning.SuspensionRestLength.Add(v.Tuning.SuspensionMaxDrop).Neg(),
+			fixed.Zero,
+		))
+		if w.InContact {
+			center = w.ContactPoint.Add(w.ContactNormal.Scale(v.Tuning.WheelRadius))
+		}
 
 		rl.DrawLine3D(vecToRL(anchorWS), vecToRL(center), rl.Gray)
 		rl.DrawSphereWires(vecToRL(center), fixedToF(v.Tuning.WheelRadius), 12, 12, rl.DarkGray)
@@ -368,8 +424,9 @@ func main() {
 
 	rl.SetTargetFPS(60)
 
-	world := sim.NewCityWorld()
+	world := sim.NewArcadeCityWorld()
 	dtFixed := fixed.FromFraction(1, 60)
+	scenarios := sim.ArcadeDebugScenarios()
 
 	flycam := FlyCamera{
 		Position:  rl.NewVector3(0, 18, -28),
@@ -379,16 +436,66 @@ func main() {
 		LookSpeed: 90,
 	}
 	chaseCam := ChaseCamera{}
-	chaseCam.Snap(world.Vehicle)
+	chaseCam.Snap(world.Vehicle.Vehicle)
 
 	useChaseCamera := true
 	paused := false
 	stepOnce := false
 	invertSteerInput := true
+	selectedScenario := 0
+	scenarioRunning := false
+	scenarioPreviewed := false
+	scenarioTick := 0
+	scenarioLogEveryTick := true
+	lastScenarioSummary := "manual drive"
+
+	selectedScenarioDef := func() sim.ArcadeDebugScenario {
+		return scenarios[selectedScenario]
+	}
+
+	stopScenario := func(reason string) {
+		if !scenarioRunning {
+			return
+		}
+		logScenarioStop(selectedScenarioDef(), scenarioTick, world, reason)
+		lastScenarioSummary = fmt.Sprintf("%s stopped at tick %d (%s)", selectedScenarioDef().ID, scenarioTick, reason)
+		scenarioRunning = false
+	}
 
 	resetWorld := func() {
+		stopScenario("manual reset")
 		world.Reset()
-		chaseCam.Snap(world.Vehicle)
+		chaseCam.Snap(world.Vehicle.Vehicle)
+		scenarioPreviewed = false
+		scenarioTick = 0
+		lastScenarioSummary = "manual world reset"
+	}
+
+	previewSelectedScenario := func() {
+		stopScenario("scenario preview")
+		scenario := selectedScenarioDef()
+		scenario.Setup(&world)
+		chaseCam.Snap(world.Vehicle.Vehicle)
+		scenarioPreviewed = true
+		scenarioTick = 0
+		paused = true
+		stepOnce = false
+		lastScenarioSummary = fmt.Sprintf("preview %s", scenario.ID)
+		fmt.Printf("[arcade scenario] preview id=%s name=%q duration=%d desc=%q\n", scenario.ID, scenario.Name, scenario.DurationTicks, scenario.Description)
+	}
+
+	startSelectedScenario := func() {
+		stopScenario("restart")
+		scenario := selectedScenarioDef()
+		scenario.Setup(&world)
+		chaseCam.Snap(world.Vehicle.Vehicle)
+		scenarioPreviewed = true
+		scenarioRunning = true
+		scenarioTick = 0
+		paused = false
+		stepOnce = false
+		lastScenarioSummary = fmt.Sprintf("running %s", scenario.ID)
+		logScenarioStart(scenario)
 	}
 
 	for !rl.WindowShouldClose() {
@@ -401,10 +508,30 @@ func main() {
 		if rl.IsKeyPressed(rl.KeyR) {
 			resetWorld()
 		}
+		if rl.IsKeyPressed(rl.KeyF1) {
+			stopScenario("scenario select")
+			selectedScenario = (selectedScenario + len(scenarios) - 1) % len(scenarios)
+			previewSelectedScenario()
+		}
+		if rl.IsKeyPressed(rl.KeyF2) {
+			stopScenario("scenario select")
+			selectedScenario = (selectedScenario + 1) % len(scenarios)
+			previewSelectedScenario()
+		}
+		if rl.IsKeyPressed(rl.KeyF3) {
+			startSelectedScenario()
+		}
+		if rl.IsKeyPressed(rl.KeyF4) {
+			scenarioLogEveryTick = !scenarioLogEveryTick
+			fmt.Printf("[arcade scenario] tick logging=%v\n", scenarioLogEveryTick)
+		}
+		if rl.IsKeyPressed(rl.KeyF5) {
+			previewSelectedScenario()
+		}
 		if rl.IsKeyPressed(rl.KeyC) {
 			useChaseCamera = !useChaseCamera
 			if useChaseCamera {
-				chaseCam.Snap(world.Vehicle)
+				chaseCam.Snap(world.Vehicle.Vehicle)
 			}
 		}
 		if rl.IsKeyPressed(rl.KeyV) {
@@ -416,44 +543,63 @@ func main() {
 		}
 
 		target := sim.VehicleInput{}
-		upDown := rl.IsKeyDown(rl.KeyUp)
-		downDown := rl.IsKeyDown(rl.KeyDown)
-		leftDown := rl.IsKeyDown(rl.KeyLeft)
-		rightDown := rl.IsKeyDown(rl.KeyRight)
+		if !scenarioRunning {
+			upDown := rl.IsKeyDown(rl.KeyUp)
+			downDown := rl.IsKeyDown(rl.KeyDown)
+			leftDown := rl.IsKeyDown(rl.KeyLeft)
+			rightDown := rl.IsKeyDown(rl.KeyRight)
 
-		if upDown && !downDown {
-			target.Throttle = fixed.One
-		} else if downDown && !upDown {
-			target.Throttle = fixed.FromFraction(3, 5).Neg()
-		}
+			if upDown && !downDown {
+				target.Throttle = fixed.FromFraction(4, 5)
+			} else if downDown && !upDown {
+				target.Throttle = fixed.FromFraction(1, 2).Neg()
+			}
 
-		leftSteer := fixed.One.Neg()
-		rightSteer := fixed.One
-		if invertSteerInput {
-			leftSteer = fixed.One
-			rightSteer = fixed.One.Neg()
-		}
-		if leftDown && !rightDown {
-			target.Steer = leftSteer
-		} else if rightDown && !leftDown {
-			target.Steer = rightSteer
-		}
+			leftSteer := fixed.One.Neg()
+			rightSteer := fixed.One
+			if invertSteerInput {
+				leftSteer = fixed.One
+				rightSteer = fixed.One.Neg()
+			}
+			if leftDown && !rightDown {
+				target.Steer = leftSteer
+			} else if rightDown && !leftDown {
+				target.Steer = rightSteer
+			}
 
-		if rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl) {
-			target.Brake = fixed.One
-		}
+			if rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl) {
+				target.Brake = fixed.One
+			}
 
-		in := &world.Vehicle.Input
-		in.Throttle = approachFixed(in.Throttle, target.Throttle, fixed.FromFraction(1, 10))
-		in.Steer = approachFixed(in.Steer, target.Steer, fixed.FromFraction(3, 20))
-		in.Brake = approachFixed(in.Brake, target.Brake, fixed.FromFraction(1, 5))
+			in := &world.Vehicle.Input
+			in.Throttle = approachFixed(in.Throttle, target.Throttle, fixed.FromFraction(2, 25))
+			in.Steer = approachFixed(in.Steer, target.Steer, fixed.FromFraction(3, 20))
+			in.Brake = approachFixed(in.Brake, target.Brake, fixed.FromFraction(1, 5))
+		}
 
 		if !paused || stepOnce {
-			world.Step(dtFixed)
+			if scenarioRunning {
+				scenarioTick++
+				scenario := selectedScenarioDef()
+				world.Vehicle.Input = scenario.InputAt(scenarioTick)
+				world.Step(dtFixed)
+				if scenarioLogEveryTick {
+					logScenarioTick(scenario, scenarioTick, world)
+				}
+				lastScenarioSummary = fmt.Sprintf("%s tick=%d/%d pos=%s", scenario.ID, scenarioTick, scenario.DurationTicks, formatVec3ForLog(world.Vehicle.Position))
+				if scenarioTick >= scenario.DurationTicks {
+					logScenarioStop(scenario, scenarioTick, world, "completed")
+					lastScenarioSummary = fmt.Sprintf("%s completed at tick %d", scenario.ID, scenarioTick)
+					scenarioRunning = false
+					paused = true
+				}
+			} else {
+				world.Step(dtFixed)
+			}
 			stepOnce = false
 		}
 
-		chaseCam.Update(world.Vehicle)
+		chaseCam.Update(world.Vehicle.Vehicle)
 
 		camera := flycam.ToCamera3D()
 		cameraModeLabel := "Flycam"
@@ -467,22 +613,35 @@ func main() {
 
 		rl.BeginMode3D(camera)
 		drawCity(world.Map)
-		drawVehicle(world.Vehicle)
+		drawVehicle(world.Vehicle.Vehicle)
 		rl.EndMode3D()
 
-		v := world.Vehicle
-		rl.DrawRectangle(12, 12, 560, 236, rl.Fade(rl.White, 0.84))
+		v := world.Vehicle.Vehicle
+		scenarioStateLabel := "Manual"
+		if scenarioRunning {
+			scenarioStateLabel = "Running"
+		} else if scenarioPreviewed {
+			scenarioStateLabel = "Loaded"
+		}
+		selectedScenarioInfo := selectedScenarioDef()
+
+		rl.DrawRectangle(12, 12, 860, 404, rl.Fade(rl.White, 0.84))
 		rl.DrawText("City Drive Debug", 22, 22, 28, rl.Black)
 		rl.DrawText(fmt.Sprintf("Tick: %d", world.Tick), 22, 58, 18, rl.DarkGray)
-		rl.DrawText(fmt.Sprintf("Camera: %s | Paused: %v", cameraModeLabel, paused), 22, 82, 18, rl.DarkGray)
-		rl.DrawText(fmt.Sprintf("Pos: (%.2f, %.2f, %.2f)", fixedToF(v.Position.X), fixedToF(v.Position.Y), fixedToF(v.Position.Z)), 22, 110, 18, rl.Black)
-		rl.DrawText(fmt.Sprintf("Vel: (%.2f, %.2f, %.2f)", fixedToF(v.Velocity.X), fixedToF(v.Velocity.Y), fixedToF(v.Velocity.Z)), 22, 136, 18, rl.Black)
-		rl.DrawText(fmt.Sprintf("Speed: %.2f | Grounded wheels: %d | OnGround: %v", fixedToF(v.Velocity.Length()), v.GroundedWheels, v.OnGround), 22, 162, 18, rl.Black)
-		rl.DrawText(fmt.Sprintf("Input T/B/S: %.2f %.2f %.2f | Invert steer: %v", fixedToF(v.Input.Throttle), fixedToF(v.Input.Brake), fixedToF(v.Input.Steer), invertSteerInput), 22, 188, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Camera: %s | Vehicle: Arcade Easy | Paused: %v", cameraModeLabel, paused), 22, 82, 18, rl.DarkGray)
+		rl.DrawText(fmt.Sprintf("Scenario: %s [%s] | State: %s | Tick Log: %v", selectedScenarioInfo.Name, selectedScenarioInfo.ID, scenarioStateLabel, scenarioLogEveryTick), 22, 106, 18, rl.DarkGray)
+		rl.DrawText(fmt.Sprintf("Scenario Tick: %d / %d", scenarioTick, selectedScenarioInfo.DurationTicks), 22, 130, 18, rl.DarkGray)
+		rl.DrawText(fmt.Sprintf("Pos: (%.2f, %.2f, %.2f)", fixedToF(v.Position.X), fixedToF(v.Position.Y), fixedToF(v.Position.Z)), 22, 156, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Vel: (%.2f, %.2f, %.2f)", fixedToF(v.Velocity.X), fixedToF(v.Velocity.Y), fixedToF(v.Velocity.Z)), 22, 182, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Speed: %.2f | Grounded wheels: %d | OnGround: %v", fixedToF(v.Velocity.Length()), v.GroundedWheels, v.OnGround), 22, 208, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Input T/B/S: %.2f %.2f %.2f | Invert steer: %v", fixedToF(v.Input.Throttle), fixedToF(v.Input.Brake), fixedToF(v.Input.Steer), invertSteerInput), 22, 234, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Scenario Note: %s", selectedScenarioInfo.Description), 22, 260, 18, rl.Black)
+		rl.DrawText(fmt.Sprintf("Last: %s", lastScenarioSummary), 22, 286, 18, rl.DarkGray)
 
-		rl.DrawText("Drive: Up/Down forward+reverse, Left/Right steer, Ctrl brake", 22, 214, 18, rl.DarkBlue)
-		rl.DrawText("Viewer: C camera, Space pause, N step, R reset, V invert steer", 22, 238, 18, rl.DarkBlue)
-		rl.DrawText("Flycam: WASD/QE move, J/L yaw, I/K pitch, Shift speed up", 22, 262, 18, rl.DarkBlue)
+		rl.DrawText("Drive: Up/Down forward+reverse, Left/Right steer, Ctrl brake", 22, 314, 18, rl.DarkBlue)
+		rl.DrawText("Scenario: F1/F2 select, F3 run, F4 toggle log, F5 preview/reset selected", 22, 338, 18, rl.DarkBlue)
+		rl.DrawText("Viewer: C camera, Space pause, N step, R reset manual world, V invert steer", 22, 362, 18, rl.DarkBlue)
+		rl.DrawText("Flycam: WASD/QE move, J/L yaw, I/K pitch, Shift speed up", 22, 386, 18, rl.DarkBlue)
 
 		rl.EndDrawing()
 	}

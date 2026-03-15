@@ -6,10 +6,13 @@ import (
 )
 
 type CityObstacle struct {
-	MinX, MaxX fixed.Fixed
-	MinZ, MaxZ fixed.Fixed
-	BaseY      fixed.Fixed
-	Height     fixed.Fixed
+	MinX, MaxX  fixed.Fixed
+	MinZ, MaxZ  fixed.Fixed
+	BaseY       fixed.Fixed
+	Height      fixed.Fixed
+	ForwardXZ   geom.Vec3
+	HalfForward fixed.Fixed
+	HalfRight   fixed.Fixed
 }
 
 func (o CityObstacle) TopY() fixed.Fixed {
@@ -31,6 +34,21 @@ func (o CityObstacle) Size() geom.Vec3 {
 		o.Height,
 		o.MaxZ.Sub(o.MinZ),
 	)
+}
+
+func (o CityObstacle) OrientedAxes() (forward geom.Vec3, right geom.Vec3, halfForward fixed.Fixed, halfRight fixed.Fixed) {
+	if o.ForwardXZ.LengthSq().Cmp(fixed.Zero) != 0 &&
+		o.HalfForward.Cmp(fixed.Zero) > 0 &&
+		o.HalfRight.Cmp(fixed.Zero) > 0 {
+		forward = geom.V3(o.ForwardXZ.X, fixed.Zero, o.ForwardXZ.Z).Normalize()
+		right = geom.V3(forward.Z, fixed.Zero, forward.X.Neg())
+		return forward, right, o.HalfForward, o.HalfRight
+	}
+
+	return geom.V3(fixed.Zero, fixed.Zero, fixed.One),
+		geom.V3(fixed.One, fixed.Zero, fixed.Zero),
+		o.MaxZ.Sub(o.MinZ).Div(fixed.FromInt(2)),
+		o.MaxX.Sub(o.MinX).Div(fixed.FromInt(2))
 }
 
 type CityRoadPath struct {
@@ -242,14 +260,44 @@ func buildGuardRailObstacles(center, leftEdge, rightEdge []geom.Vec3) []CityObst
 			minX, maxX := minMaxFixed(edge[i].X, edge[i+1].X)
 			minZ, maxZ := minMaxFixed(edge[i].Z, edge[i+1].Z)
 			baseY, topY := minMaxFixed(edge[i].Y, edge[i+1].Y)
+			delta := geom.V3(edge[i+1].X.Sub(edge[i].X), fixed.Zero, edge[i+1].Z.Sub(edge[i].Z))
+			forward := delta.Normalize()
+			if forward.LengthSq().Cmp(fixed.Zero) == 0 {
+				forward = geom.V3(fixed.Zero, fixed.Zero, fixed.One)
+			}
+			right := geom.V3(forward.Z, fixed.Zero, forward.X.Neg())
+			centerXZ := geom.V3(
+				edge[i].X.Add(edge[i+1].X).Div(fixed.FromInt(2)),
+				fixed.Zero,
+				edge[i].Z.Add(edge[i+1].Z).Div(fixed.FromInt(2)),
+			)
+			halfForward := delta.Length().Div(fixed.FromInt(2)).Add(thickness)
+			halfRight := thickness
+			corners := [4]geom.Vec3{
+				centerXZ.Add(forward.Scale(halfForward)).Add(right.Scale(halfRight)),
+				centerXZ.Add(forward.Scale(halfForward)).Add(right.Scale(halfRight.Neg())),
+				centerXZ.Add(forward.Scale(halfForward.Neg())).Add(right.Scale(halfRight)),
+				centerXZ.Add(forward.Scale(halfForward.Neg())).Add(right.Scale(halfRight.Neg())),
+			}
+			minX = corners[0].X
+			maxX = corners[0].X
+			minZ = corners[0].Z
+			maxZ = corners[0].Z
+			for j := 1; j < len(corners); j++ {
+				minX, maxX = minMaxFixed3(minX, maxX, corners[j].X)
+				minZ, maxZ = minMaxFixed3(minZ, maxZ, corners[j].Z)
+			}
 
 			rails = append(rails, CityObstacle{
-				MinX:   minX.Sub(thickness),
-				MaxX:   maxX.Add(thickness),
-				MinZ:   minZ.Sub(thickness),
-				MaxZ:   maxZ.Add(thickness),
-				BaseY:  baseY,
-				Height: topY.Sub(baseY).Add(railTop),
+				MinX:        minX,
+				MaxX:        maxX,
+				MinZ:        minZ,
+				MaxZ:        maxZ,
+				BaseY:       baseY,
+				Height:      topY.Sub(baseY).Add(railTop),
+				ForwardXZ:   forward,
+				HalfForward: halfForward,
+				HalfRight:   halfRight,
 			})
 		}
 	}
@@ -311,4 +359,14 @@ func minMaxFixed(a, b fixed.Fixed) (fixed.Fixed, fixed.Fixed) {
 		return a, b
 	}
 	return b, a
+}
+
+func minMaxFixed3(minv, maxv, candidate fixed.Fixed) (fixed.Fixed, fixed.Fixed) {
+	if candidate.Cmp(minv) < 0 {
+		minv = candidate
+	}
+	if candidate.Cmp(maxv) > 0 {
+		maxv = candidate
+	}
+	return minv, maxv
 }

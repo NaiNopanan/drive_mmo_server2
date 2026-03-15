@@ -10,7 +10,7 @@ type CityWorld struct {
 
 func NewCityWorld() CityWorld {
 	city := BuildCurvedOverpassCity()
-	v := NewVehicle(1, city.SpawnPosition)
+	v := NewVehicleWithTuning(1, city.SpawnPosition, EasyDriveTuning())
 	v.Yaw = city.SpawnYaw
 	v.UpdateBasisFromYaw()
 

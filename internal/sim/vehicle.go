@@ -150,9 +150,46 @@ func PrototypeTuning() VehicleTuning {
 	return t
 }
 
-func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
-	t := PrototypeTuning()
+// CityDriveTuning favors predictable low-speed steering and calmer slope response.
+func CityDriveTuning() VehicleTuning {
+	t := DefaultTuning()
+	t.MaxSpeed = fixed.FromInt(36)
+	t.DriveForce = fixed.FromInt(5200)
+	t.BrakeForce = fixed.FromInt(10000)
+	t.RollingResistance = fixed.FromInt(360)
+	t.LateralGrip = fixed.FromInt(5200)
 
+	t.MaxSteerAngleRad = fixed.FromFraction(72, 100)  // ~41deg
+	t.SteerRateRadPerSec = fixed.FromFraction(22, 10) // ~126deg/s
+
+	t.SuspensionStiffness = fixed.FromInt(24000)
+	t.SuspensionDamping = fixed.FromInt(8000)
+	t.MaxSuspensionForce = fixed.FromInt(26000)
+	return t
+}
+
+// EasyDriveTuning is a calmer city preset with softer throttle and more forgiving steering.
+func EasyDriveTuning() VehicleTuning {
+	t := CityDriveTuning()
+	t.MaxSpeed = fixed.FromInt(28)
+	t.DriveForce = fixed.FromInt(2800)
+	t.BrakeForce = fixed.FromInt(9500)
+	t.RollingResistance = fixed.FromInt(520)
+	t.LateralGrip = fixed.FromInt(5800)
+
+	t.MaxSteerAngleRad = fixed.FromFraction(85, 100) // ~49deg
+	t.SteerRateRadPerSec = fixed.FromInt(3)          // ~172deg/s
+	t.SuspensionStiffness = fixed.FromInt(20000)
+	t.SuspensionDamping = fixed.FromInt(9500)
+	t.MaxSuspensionForce = fixed.FromInt(24000)
+	return t
+}
+
+func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
+	return NewVehicleWithTuning(id, pos, PrototypeTuning())
+}
+
+func NewVehicleWithTuning(id uint32, pos geom.Vec3, t VehicleTuning) Vehicle {
 	v := Vehicle{
 		ID:        id,
 		Tuning:    t,
