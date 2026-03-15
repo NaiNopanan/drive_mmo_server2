@@ -29,6 +29,8 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewSphereBoxFrictionCollisionScenario(),
 		NewSphereBoxFrictionBounceCollisionScenario(),
 		NewHundredRigidSpheresInBoxScenario(),
+		NewHundredBoxesInBoxScenario(),
+		NewHundredBoxesInBoxAngleScenario(),
 	}
 }
 
@@ -1468,6 +1470,187 @@ func NewHundredRigidSpheresInBoxScenario() ScenarioDefinition {
 	}
 }
 
+func NewHundredBoxesInBoxScenario() ScenarioDefinition {
+	const scenarioTicks = 360
+
+	return ScenarioDefinition{
+		Name:        "Hundred Boxes In Box",
+		Description: "One hundred boxes fall into an open box, collide with the floor, walls, and each other, and stay inside the container.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			boxes := make([]physics.BoxBody, 0, 100)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(7, 20), fixed.FromFraction(7, 20), fixed.FromFraction(7, 20))
+			spacing := fixed.FromFraction(17, 20)
+			startX := fixed.FromFraction(-153, 50)
+			startZ := fixed.FromFraction(-153, 50)
+			startY := fixed.FromInt(10)
+
+			for layer := 0; layer < 4; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						if len(boxes) == 100 {
+							break
+						}
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 4)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 4)),
+						)
+						box := physics.NewDynamicBoxBody(fixed.One, halfExtents, position)
+						box.Restitution = fixed.FromFraction(1, 10)
+						box.Friction = fixed.FromFraction(1, 6)
+						boxes = append(boxes, box)
+					}
+				}
+			}
+
+			return SceneState{
+				Boxes: boxes,
+			}
+		},
+		Step: StepHundredBoxesInBoxScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.Boxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred boxes in the box scene.",
+				}
+			}
+			if !state.BoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The boxes never collided with each other.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, box := range state.Boxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one box fell below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "One hundred boxes stayed inside the open box and collided under box physics.",
+			}
+		},
+	}
+}
+
+func NewHundredBoxesInBoxAngleScenario() ScenarioDefinition {
+	const scenarioTicks = 360
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Boxes In Box Angle",
+		Description: "One hundred rigid boxes fall into an open box while starting from different 3D orientations.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(7, 20), fixed.FromFraction(7, 20), fixed.FromFraction(7, 20))
+			spacing := fixed.FromFraction(17, 20)
+			startX := fixed.FromFraction(-153, 50)
+			startZ := fixed.FromFraction(-153, 50)
+			startY := fixed.FromInt(10)
+
+			for layer := 0; layer < 4; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						if len(boxes) == 100 {
+							break
+						}
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 4)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 4)),
+						)
+						box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+						box.Restitution = fixed.FromFraction(1, 10)
+						index := len(boxes)
+						box.Orientation = physics.NewQuaternionFromEulerXYZ(
+							fixed.FromFraction(int64((index%9)-4)*43633, 1000000),
+							fixed.FromFraction(int64((index%7)-3)*62333, 1000000),
+							fixed.FromFraction(int64((index%11)-5)*87266, 1000000),
+						)
+						box.AngularVelocity = geometry.NewVector3(
+							fixed.FromFraction(int64((index%5)-2), 3),
+							fixed.FromFraction(int64((index%7)-3), 4),
+							fixed.FromFraction(int64((index%9)-4), 5),
+						)
+						boxes = append(boxes, box)
+					}
+				}
+			}
+
+			return SceneState{
+				RigidBoxes:                 boxes,
+				RigidBoxRotationChangedSet: make([]bool, len(boxes)),
+			}
+		},
+		Step: StepHundredRigidBoxesInBoxAngleScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidBoxes) != 100 || len(state.RigidBoxRotationChangedSet) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Hundred rigid-box angle scene bookkeeping was incomplete.",
+				}
+			}
+			if !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The angled rigid boxes never collided with each other.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			rotationChangedCount := 0
+			for index, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one angled rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one angled rigid box fell below the box floor.",
+					}
+				}
+				if state.RigidBoxRotationChangedSet[index] {
+					rotationChangedCount++
+				}
+			}
+			if rotationChangedCount == 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "No angled rigid box changed orientation while falling in the container.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "One hundred rigid boxes with different starting orientations stayed inside the open box and continued rotating.",
+			}
+		},
+	}
+}
+
 func StepSphereScene(state *SceneState) {
 	if state == nil {
 		return
@@ -1789,6 +1972,84 @@ func StepHundredRigidSpheresInBoxScene(state *SceneState) {
 		if len(state.LastContacts) > 0 {
 			state.LastContact = state.LastContacts[0]
 		}
+	}
+}
+
+func StepHundredBoxesInBoxScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	minX, maxX, minZ, maxZ, wallHeight := openBoxContainerParameters()
+
+	for index := range state.Boxes {
+		physics.AdvanceBoxBodyWithGravity(&state.Boxes[index], physics.DefaultTimeStep, physics.StandardGravity)
+		if physics.ConstrainBoxBodyToOpenContainer(&state.Boxes[index], minX, maxX, minZ, maxZ, fixed.Zero, wallHeight) {
+			state.EverTouchedGround = true
+		}
+	}
+
+	for pass := 0; pass < 2; pass++ {
+		for first := 0; first < len(state.Boxes); first++ {
+			for second := first + 1; second < len(state.Boxes); second++ {
+				combinedRestitution := state.Boxes[first].Restitution.Add(state.Boxes[second].Restitution)
+				if combinedRestitution.Cmp(fixed.One) > 0 {
+					combinedRestitution = fixed.One
+				}
+				contact := physics.ResolveBoxBoxContact(&state.Boxes[first], &state.Boxes[second], combinedRestitution)
+				if contact.Hit {
+					state.BoxBoxCollisionDetected = true
+				}
+			}
+		}
+	}
+
+	if len(state.Boxes) > 0 {
+		state.Box = state.Boxes[0]
+	}
+}
+
+func StepHundredRigidBoxesInBoxAngleScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+	if len(state.RigidBoxRotationChangedSet) != len(state.RigidBoxes) {
+		state.RigidBoxRotationChangedSet = make([]bool, len(state.RigidBoxes))
+	}
+
+	minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+
+	for index := range state.RigidBoxes {
+		initialOrientation := state.RigidBoxes[index].Orientation
+		physics.AdvanceRigidBoxBody3D(&state.RigidBoxes[index], physics.DefaultTimeStep, physics.StandardGravity)
+		if physics.ConstrainRigidBoxBody3DToOpenContainer(&state.RigidBoxes[index], minX, maxX, minZ, maxZ, fixed.Zero) {
+			state.EverTouchedGround = true
+		}
+		if state.RigidBoxes[index].Orientation.W != initialOrientation.W ||
+			state.RigidBoxes[index].Orientation.X != initialOrientation.X ||
+			state.RigidBoxes[index].Orientation.Y != initialOrientation.Y ||
+			state.RigidBoxes[index].Orientation.Z != initialOrientation.Z {
+			state.RigidBoxRotationChangedSet[index] = true
+		}
+	}
+
+	for pass := 0; pass < 2; pass++ {
+		for first := 0; first < len(state.RigidBoxes); first++ {
+			for second := first + 1; second < len(state.RigidBoxes); second++ {
+				combinedRestitution := state.RigidBoxes[first].Restitution.Add(state.RigidBoxes[second].Restitution)
+				if combinedRestitution.Cmp(fixed.One) > 0 {
+					combinedRestitution = fixed.One
+				}
+				contact := physics.ResolveRigidBoxBoxContact(&state.RigidBoxes[first], &state.RigidBoxes[second], combinedRestitution)
+				if contact.Hit {
+					state.RigidBoxBoxCollisionDetected = true
+				}
+			}
+		}
+	}
+
+	if len(state.RigidBoxes) > 0 {
+		state.RigidBox = state.RigidBoxes[0]
 	}
 }
 

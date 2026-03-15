@@ -483,6 +483,58 @@ func TestHundredRigidSpheresInBoxScenarioStaysContained(t *testing.T) {
 	}
 }
 
+func TestHundredBoxesInBoxScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredBoxesInBoxScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.Boxes) != 100 {
+		t.Fatalf("expected 100 boxes at setup, got %d", len(runner.State.Boxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected hundred-boxes-in-box scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.BoxBoxCollisionDetected {
+		t.Fatalf("expected boxes to collide with each other inside the box")
+	}
+}
+
+func TestHundredBoxesInBoxAngleScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredBoxesInBoxAngleScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidBoxes) != 100 {
+		t.Fatalf("expected 100 rigid boxes at setup, got %d", len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected hundred-rigid-boxes-in-box-angle scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.RigidBoxBoxCollisionDetected {
+		t.Fatalf("expected angled rigid boxes to collide with each other inside the box")
+	}
+
+	rotatedCount := 0
+	for _, changed := range runner.State.RigidBoxRotationChangedSet {
+		if changed {
+			rotatedCount++
+		}
+	}
+	if rotatedCount == 0 {
+		t.Fatalf("expected at least one rigid box to change orientation inside the box")
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

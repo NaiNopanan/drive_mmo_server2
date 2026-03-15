@@ -39,6 +39,7 @@ type SceneState struct {
 	BounceDetected                     bool
 	SphereSphereCollisionDetected      bool
 	SphereBoxCollisionDetected         bool
+	BoxBoxCollisionDetected            bool
 	BounceDetectedSet                  []bool
 	PeakBounceHeight                   fixed.Fixed
 	PeakBounceHeights                  []fixed.Fixed
@@ -55,6 +56,7 @@ type SceneState struct {
 	BoxInitialRotations                []fixed.Fixed
 	BoxRotationChangedSet              []bool
 	RigidBoxBounceDetected             bool
+	RigidBoxBoxCollisionDetected       bool
 	RigidBoxPeakBounceHeight           fixed.Fixed
 	RigidBoxRotationChanged            bool
 	RigidBoxBounceDetectedSet          []bool

@@ -68,6 +68,7 @@ func HashSceneState(state SceneState) uint64 {
 	writeBool(state.BounceDetected)
 	writeBool(state.SphereSphereCollisionDetected)
 	writeBool(state.SphereBoxCollisionDetected)
+	writeBool(state.BoxBoxCollisionDetected)
 	writeUint64(uint64(len(state.BounceDetectedSet)))
 	for _, value := range state.BounceDetectedSet {
 		writeBool(value)
@@ -210,6 +211,7 @@ func HashSceneState(state SceneState) uint64 {
 	writeVector3(state.RigidBox.AngularVelocity)
 	writeVector3(state.RigidBox.InverseInertiaBody)
 	writeBool(state.RigidBoxBounceDetected)
+	writeBool(state.RigidBoxBoxCollisionDetected)
 	writeFixed(state.RigidBoxPeakBounceHeight)
 	writeBool(state.RigidBoxRotationChanged)
 	writeUint64(uint64(len(state.RigidBoxes)))

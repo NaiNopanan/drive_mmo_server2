@@ -411,7 +411,9 @@ func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
 }
 
 func shouldDrawObjectLabels(definition scenario.ScenarioDefinition) bool {
-	return definition.Name != "Hundred Rigid Spheres In Box"
+	return definition.Name != "Hundred Rigid Spheres In Box" &&
+		definition.Name != "Hundred Boxes In Box" &&
+		definition.Name != "Hundred Rigid Boxes In Box Angle"
 }
 
 func sceneSpheres(state scenario.SceneState) []physics.SphereBody {

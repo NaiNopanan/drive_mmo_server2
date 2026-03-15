@@ -171,15 +171,21 @@ func applyInverseInertiaWorld(body RigidBoxBody3D, vector geometry.Vector3) geom
 	return body.Orientation.RotateVector(local)
 }
 
-func StepRigidBoxBody3DWithGravityAndPlaneOverride(body *RigidBoxBody3D, dt fixed.Fixed, gravity geometry.Vector3, planePoint, planeNormal geometry.Vector3, contactRestitution fixed.Fixed) RigidBoxStepResult {
+func AdvanceRigidBoxBody3D(body *RigidBoxBody3D, dt fixed.Fixed, gravity geometry.Vector3) {
 	if body == nil {
-		return RigidBoxStepResult{}
+		return
 	}
 
 	body.Grounded = false
 	ApplyForce(&body.Motion, ComputeGravityForce(body.Motion.Mass, gravity))
 	StepLinearMotion(&body.Motion, dt)
 	integrateRigidBoxOrientation(body, dt)
+}
+
+func ResolveRigidBoxBody3DPlaneOverride(body *RigidBoxBody3D, planePoint, planeNormal geometry.Vector3, contactRestitution fixed.Fixed) RigidBoxStepResult {
+	if body == nil {
+		return RigidBoxStepResult{}
+	}
 
 	if contactRestitution.Cmp(fixed.Zero) < 0 {
 		contactRestitution = fixed.Zero
@@ -237,4 +243,13 @@ func StepRigidBoxBody3DWithGravityAndPlaneOverride(body *RigidBoxBody3D, dt fixe
 			Penetration: penetration,
 		},
 	}
+}
+
+func StepRigidBoxBody3DWithGravityAndPlaneOverride(body *RigidBoxBody3D, dt fixed.Fixed, gravity geometry.Vector3, planePoint, planeNormal geometry.Vector3, contactRestitution fixed.Fixed) RigidBoxStepResult {
+	if body == nil {
+		return RigidBoxStepResult{}
+	}
+
+	AdvanceRigidBoxBody3D(body, dt, gravity)
+	return ResolveRigidBoxBody3DPlaneOverride(body, planePoint, planeNormal, contactRestitution)
 }
