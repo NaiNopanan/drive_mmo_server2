@@ -256,6 +256,104 @@ func TestRigidBox3DFlatBounceScenarioRotatesAndBounces(t *testing.T) {
 	}
 }
 
+func TestNineRigidBox3DFlatAngleComparisonScenarioUsesDifferentStartingAngles(t *testing.T) {
+	definition := scenario.NewNineRigidBox3DFlatAngleComparisonScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidBoxes) != 9 {
+		t.Fatalf("expected 9 rigid boxes at setup, got %d", len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected nine rigid-box flat angle scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	for index := range runner.State.RigidBoxes {
+		if !runner.State.RigidBoxRotationChangedSet[index] {
+			t.Fatalf("expected rigid box %d to rotate after ground contact", index)
+		}
+		if !runner.State.RigidBoxes[index].Grounded {
+			t.Fatalf("expected rigid box %d to be grounded at the end", index)
+		}
+	}
+}
+
+func TestNineRigidSphere3DSmallSlopeScenarioRollsAndRotates(t *testing.T) {
+	definition := scenario.NewNineRigidSphere3DSmallSlopeScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 9 {
+		t.Fatalf("expected 9 rigid spheres at setup, got %d", len(runner.State.RigidSpheres))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected nine rigid-sphere slope scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	for index := range runner.State.RigidSpheres {
+		if !runner.State.RigidSphereRotationChangedSet[index] {
+			t.Fatalf("expected rigid sphere %d to rotate on the slope", index)
+		}
+		if index >= len(runner.State.RigidSphereTouchedGroundSet) || !runner.State.RigidSphereTouchedGroundSet[index] {
+			t.Fatalf("expected rigid sphere %d to touch its slope", index)
+		}
+	}
+}
+
+func TestTwoSphereCollisionScenarioCollidesAndReversesDirection(t *testing.T) {
+	definition := scenario.NewTwoSphereCollisionScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.Spheres) != 2 {
+		t.Fatalf("expected 2 spheres at setup, got %d", len(runner.State.Spheres))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected two-sphere collision scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereSphereCollisionDetected {
+		t.Fatalf("expected two spheres to collide")
+	}
+}
+
+func TestTwoSphereDifferentMassCollisionScenarioShowsDifferentOutcome(t *testing.T) {
+	definition := scenario.NewTwoSphereDifferentMassCollisionScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.Spheres) != 2 {
+		t.Fatalf("expected 2 spheres at setup, got %d", len(runner.State.Spheres))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected different-mass sphere collision scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereSphereCollisionDetected {
+		t.Fatalf("expected different-mass spheres to collide")
+	}
+
+	if runner.State.Spheres[1].Motion.Velocity.X.Cmp(runner.State.Spheres[0].Motion.Velocity.X) <= 0 {
+		t.Fatalf("expected lighter sphere to move faster after impact, got heavy=%v light=%v", runner.State.Spheres[0].Motion.Velocity, runner.State.Spheres[1].Motion.Velocity)
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

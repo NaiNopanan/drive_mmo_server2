@@ -19,6 +19,10 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewThreeBoxSameSlopeAngleComparisonScenario(),
 		NewNineBoxFlatAngleComparisonScenario(),
 		NewRigidBox3DFlatBounceScenario(),
+		NewNineRigidBox3DFlatAngleComparisonScenario(),
+		NewNineRigidSphere3DSmallSlopeScenario(),
+		NewTwoSphereCollisionScenario(),
+		NewTwoSphereDifferentMassCollisionScenario(),
 	}
 }
 
@@ -766,6 +770,288 @@ func NewRigidBox3DFlatBounceScenario() ScenarioDefinition {
 	}
 }
 
+func NewNineRigidBox3DFlatAngleComparisonScenario() ScenarioDefinition {
+	const scenarioTicks = 480
+
+	return ScenarioDefinition{
+		Name:        "Nine Rigid Box 3D Flat Angle Comparison",
+		Description: "Nine rigid boxes fall onto flat ground from the same height while each box starts with a different 3-axis orientation.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			halfExtents := geometry.NewVector3(fixed.One, fixed.One, fixed.One)
+			positions := []geometry.Vector3{
+				geometry.NewVector3(fixed.FromInt(-18), fixed.FromInt(14), fixed.FromInt(-18)),
+				geometry.NewVector3(fixed.Zero, fixed.FromInt(14), fixed.FromInt(-18)),
+				geometry.NewVector3(fixed.FromInt(18), fixed.FromInt(14), fixed.FromInt(-18)),
+				geometry.NewVector3(fixed.FromInt(-18), fixed.FromInt(14), fixed.Zero),
+				geometry.NewVector3(fixed.Zero, fixed.FromInt(14), fixed.Zero),
+				geometry.NewVector3(fixed.FromInt(18), fixed.FromInt(14), fixed.Zero),
+				geometry.NewVector3(fixed.FromInt(-18), fixed.FromInt(14), fixed.FromInt(18)),
+				geometry.NewVector3(fixed.Zero, fixed.FromInt(14), fixed.FromInt(18)),
+				geometry.NewVector3(fixed.FromInt(18), fixed.FromInt(14), fixed.FromInt(18)),
+			}
+			orientations := []physics.Quaternion{
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(-349066, 1000000), fixed.FromFraction(-174533, 1000000), fixed.FromFraction(-87266, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(-261799, 1000000), fixed.FromFraction(-87266, 1000000), fixed.Zero),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(-174533, 1000000), fixed.Zero, fixed.FromFraction(87266, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(-87266, 1000000), fixed.FromFraction(174533, 1000000), fixed.FromFraction(174533, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.Zero, fixed.Zero, fixed.Zero),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(87266, 1000000), fixed.FromFraction(-174533, 1000000), fixed.FromFraction(261799, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(174533, 1000000), fixed.FromFraction(87266, 1000000), fixed.FromFraction(-261799, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(261799, 1000000), fixed.FromFraction(261799, 1000000), fixed.FromFraction(87266, 1000000)),
+				physics.NewQuaternionFromEulerXYZ(fixed.FromFraction(349066, 1000000), fixed.FromFraction(-261799, 1000000), fixed.FromFraction(174533, 1000000)),
+			}
+
+			boxes := make([]physics.RigidBoxBody3D, 0, len(positions))
+			for index, position := range positions {
+				box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+				box.Restitution = fixed.Zero
+				box.Orientation = orientations[index]
+				boxes = append(boxes, box)
+			}
+
+			return SceneState{
+				RigidBoxes:                 boxes,
+				RigidBoxBounceDetectedSet:  make([]bool, len(boxes)),
+				RigidBoxPeakBounceHeights:  make([]fixed.Fixed, len(boxes)),
+				RigidBoxRotationChangedSet: make([]bool, len(boxes)),
+			}
+		},
+		Step: StepNineRigidBox3DFlatAngleComparisonScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidBoxes) != 9 || len(state.RigidBoxRotationChangedSet) != 9 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Nine rigid-box flat angle scene bookkeeping was incomplete.",
+				}
+			}
+
+			for index, box := range state.RigidBoxes {
+				if !box.Grounded {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box was not grounded on the flat floor at the end of the scene.",
+					}
+				}
+				if !state.RigidBoxRotationChangedSet[index] {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box never changed orientation after hitting the flat floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Nine rigid boxes with different starting orientations hit the same flat floor and rotated under 3D physics.",
+			}
+		},
+	}
+}
+
+func NewNineRigidSphere3DSmallSlopeScenario() ScenarioDefinition {
+	const scenarioTicks = 300
+
+	slopePatches := makeNineSmallSlopePatchSpecs()
+	startPositions := make([]geometry.Vector3, 0, len(slopePatches))
+	for _, patch := range slopePatches {
+		startPositions = append(startPositions, geometry.NewVector3(patch.Center.X, fixed.FromInt(8), patch.Center.Z))
+	}
+
+	return ScenarioDefinition{
+		Name:        "Nine Rigid Sphere 3D Small Slope",
+		Description: "Nine rigid spheres with full 3-axis spin fall onto nine small side slopes and roll downhill under contact friction.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, len(startPositions))
+			for index, position := range startPositions {
+				sphere := physics.NewRigidSphereBody3D(fixed.One, fixed.One, position)
+				sphere.Restitution = fixed.Zero
+				sphere.Friction = fixed.FromFraction(3, 5)
+				sphere.Orientation = physics.NewQuaternionFromEulerXYZ(
+					fixed.FromFraction(int64((index%3)-1)*87266, 1000000),
+					fixed.FromFraction(int64((index/3)-1)*174533, 1000000),
+					fixed.FromFraction(int64(index-4)*43633, 1000000),
+				)
+				sphere.AngularVelocity = geometry.NewVector3(
+					fixed.FromFraction(int64(index+1), 2),
+					fixed.FromFraction(int64(index+2), 3),
+					fixed.FromFraction(int64(index+3), 4),
+				)
+				spheres = append(spheres, sphere)
+			}
+
+			return SceneState{
+				RigidSpheres:                  spheres,
+				RigidSphereTouchedGroundSet:   make([]bool, len(spheres)),
+				RigidSphereBounceDetectedSet:  make([]bool, len(spheres)),
+				RigidSpherePeakBounceHeights:  make([]fixed.Fixed, len(spheres)),
+				RigidSphereRotationChangedSet: make([]bool, len(spheres)),
+				GroundTriangles:               makeSlopePatchTriangles(slopePatches),
+			}
+		},
+		Step: StepNineRigidSphere3DSmallSlopeScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 9 || len(state.RigidSphereRotationChangedSet) != 9 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Nine rigid-sphere slope scene bookkeeping was incomplete.",
+				}
+			}
+
+			for index, sphere := range state.RigidSpheres {
+				if index >= len(state.RigidSphereTouchedGroundSet) || !state.RigidSphereTouchedGroundSet[index] {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere never produced a slope contact.",
+					}
+				}
+				if !state.RigidSphereRotationChangedSet[index] {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere never changed orientation on its slope.",
+					}
+				}
+				displacement := sphere.Motion.Position.Sub(startPositions[index])
+				if displacement.Dot(slopePatches[index].DownhillDirection).Cmp(fixed.Zero) <= 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere did not roll downhill along its small slope.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Nine rigid spheres rolled downhill on small slopes while rotating under full 3-axis state.",
+			}
+		},
+	}
+}
+
+func NewTwoSphereCollisionScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Two Sphere Collision",
+		Description: "Two equal spheres move toward each other in midair and should collide, separate, and exchange horizontal motion.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := []physics.SphereBody{
+				physics.NewDynamicSphereBody(
+					fixed.One,
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(-6), fixed.FromInt(6), fixed.Zero),
+				),
+				physics.NewDynamicSphereBody(
+					fixed.One,
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(6), fixed.FromInt(6), fixed.Zero),
+				),
+			}
+			spheres[0].Motion.Velocity = geometry.NewVector3(fixed.FromInt(4), fixed.Zero, fixed.Zero)
+			spheres[1].Motion.Velocity = geometry.NewVector3(fixed.FromInt(-4), fixed.Zero, fixed.Zero)
+
+			return SceneState{
+				Spheres: spheres,
+			}
+		},
+		Step: StepTwoSphereCollisionScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.Spheres) != 2 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly two spheres in the scene.",
+				}
+			}
+			if !state.SphereSphereCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The two spheres never collided.",
+				}
+			}
+			if state.Spheres[0].Motion.Velocity.X.Cmp(fixed.Zero) >= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Sphere A did not reverse horizontal direction after collision.",
+				}
+			}
+			if state.Spheres[1].Motion.Velocity.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Sphere B did not reverse horizontal direction after collision.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Two spheres collided and exchanged horizontal motion.",
+			}
+		},
+	}
+}
+
+func NewTwoSphereDifferentMassCollisionScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Two Sphere Collision Different Mass",
+		Description: "Two same-size spheres collide in midair with different masses, so the lighter sphere should leave faster after impact.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := []physics.SphereBody{
+				physics.NewDynamicSphereBody(
+					fixed.FromInt(3),
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(-6), fixed.FromInt(6), fixed.Zero),
+				),
+				physics.NewDynamicSphereBody(
+					fixed.One,
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(2), fixed.FromInt(6), fixed.Zero),
+				),
+			}
+			spheres[0].Motion.Velocity = geometry.NewVector3(fixed.FromInt(4), fixed.Zero, fixed.Zero)
+
+			return SceneState{
+				Spheres: spheres,
+			}
+		},
+		Step: StepTwoSphereCollisionScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.Spheres) != 2 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly two spheres in the scene.",
+				}
+			}
+			if !state.SphereSphereCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The two different-mass spheres never collided.",
+				}
+			}
+			if state.Spheres[0].Motion.Velocity.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The heavier sphere should still move forward after collision.",
+				}
+			}
+			if state.Spheres[1].Motion.Velocity.X.Cmp(state.Spheres[0].Motion.Velocity.X) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The lighter sphere should leave the collision faster than the heavier sphere.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Different masses changed the post-collision speeds while the spheres stayed the same size.",
+			}
+		},
+	}
+}
+
 func StepSphereScene(state *SceneState) {
 	if state == nil {
 		return
@@ -795,6 +1081,44 @@ func StepSphereScene(state *SceneState) {
 	if state.BounceDetected && state.Sphere.Motion.Position.Y.Cmp(state.PeakBounceHeight) > 0 {
 		state.PeakBounceHeight = state.Sphere.Motion.Position.Y
 	}
+}
+
+func StepTwoSphereCollisionScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+	if len(state.Spheres) != 2 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = nil
+
+	for index := range state.Spheres {
+		physics.StepLinearMotion(&state.Spheres[index].Motion, physics.DefaultTimeStep)
+	}
+
+	positionA, velocityA, positionB, velocityB, contact := physics.ResolveSphereSphereContact(
+		state.Spheres[0].Motion.Position,
+		state.Spheres[0].Motion.Velocity,
+		state.Spheres[0].Motion.InverseMass,
+		state.Spheres[0].Radius,
+		state.Spheres[1].Motion.Position,
+		state.Spheres[1].Motion.Velocity,
+		state.Spheres[1].Motion.InverseMass,
+		state.Spheres[1].Radius,
+		fixed.One,
+	)
+
+	if contact.Hit {
+		state.SphereSphereCollisionDetected = true
+		state.Spheres[0].Motion.Position = positionA
+		state.Spheres[0].Motion.Velocity = velocityA
+		state.Spheres[1].Motion.Position = positionB
+		state.Spheres[1].Motion.Velocity = velocityB
+	}
+
+	state.Sphere = state.Spheres[0]
 }
 
 func StepMultiSphereScene(state *SceneState) {
@@ -1152,6 +1476,127 @@ func StepRigidBox3DFlatBounceScene(state *SceneState) {
 	}
 }
 
+func StepNineRigidBox3DFlatAngleComparisonScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = make([]physics.SphereTriangleContact, len(state.RigidBoxes))
+	if len(state.RigidBoxBounceDetectedSet) != len(state.RigidBoxes) {
+		state.RigidBoxBounceDetectedSet = make([]bool, len(state.RigidBoxes))
+	}
+	if len(state.RigidBoxPeakBounceHeights) != len(state.RigidBoxes) {
+		state.RigidBoxPeakBounceHeights = make([]fixed.Fixed, len(state.RigidBoxes))
+	}
+	if len(state.RigidBoxRotationChangedSet) != len(state.RigidBoxes) {
+		state.RigidBoxRotationChangedSet = make([]bool, len(state.RigidBoxes))
+	}
+
+	planePoint := geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.Zero)
+	planeNormal := geometry.NewVector3(fixed.Zero, fixed.One, fixed.Zero)
+
+	for index := range state.RigidBoxes {
+		initialOrientation := state.RigidBoxes[index].Orientation
+		result := physics.StepRigidBoxBody3DWithGravityAndPlaneOverride(
+			&state.RigidBoxes[index],
+			physics.DefaultTimeStep,
+			physics.StandardGravity,
+			planePoint,
+			planeNormal,
+			state.RigidBoxes[index].Restitution,
+		)
+
+		if result.HadContact {
+			state.LastContacts[index] = result.LastContact
+			state.LastContact = result.LastContact
+			state.EverTouchedGround = true
+			if state.RigidBoxes[index].Motion.Velocity.Y.Cmp(fixed.Zero) > 0 {
+				state.RigidBoxBounceDetectedSet[index] = true
+			}
+		}
+
+		if state.RigidBoxBounceDetectedSet[index] &&
+			state.RigidBoxes[index].Motion.Position.Y.Cmp(state.RigidBoxPeakBounceHeights[index]) > 0 {
+			state.RigidBoxPeakBounceHeights[index] = state.RigidBoxes[index].Motion.Position.Y
+		}
+
+		if state.RigidBoxes[index].Orientation.W != initialOrientation.W ||
+			state.RigidBoxes[index].Orientation.X != initialOrientation.X ||
+			state.RigidBoxes[index].Orientation.Y != initialOrientation.Y ||
+			state.RigidBoxes[index].Orientation.Z != initialOrientation.Z {
+			state.RigidBoxRotationChangedSet[index] = true
+		}
+	}
+
+	if len(state.RigidBoxes) > 0 {
+		state.RigidBox = state.RigidBoxes[0]
+	}
+	if len(state.LastContacts) > 0 {
+		state.LastContact = state.LastContacts[0]
+	}
+}
+
+func StepNineRigidSphere3DSmallSlopeScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = make([]physics.SphereTriangleContact, len(state.RigidSpheres))
+	if len(state.RigidSphereTouchedGroundSet) != len(state.RigidSpheres) {
+		state.RigidSphereTouchedGroundSet = make([]bool, len(state.RigidSpheres))
+	}
+	if len(state.RigidSphereBounceDetectedSet) != len(state.RigidSpheres) {
+		state.RigidSphereBounceDetectedSet = make([]bool, len(state.RigidSpheres))
+	}
+	if len(state.RigidSpherePeakBounceHeights) != len(state.RigidSpheres) {
+		state.RigidSpherePeakBounceHeights = make([]fixed.Fixed, len(state.RigidSpheres))
+	}
+	if len(state.RigidSphereRotationChangedSet) != len(state.RigidSpheres) {
+		state.RigidSphereRotationChangedSet = make([]bool, len(state.RigidSpheres))
+	}
+
+	for index := range state.RigidSpheres {
+		initialOrientation := state.RigidSpheres[index].Orientation
+		result := physics.StepRigidSphereBody3DWithGravity(
+			&state.RigidSpheres[index],
+			physics.DefaultTimeStep,
+			physics.StandardGravity,
+			state.GroundTriangles[index*2:index*2+2],
+		)
+
+		if result.HadContact {
+			state.LastContacts[index] = result.LastContact
+			state.LastContact = result.LastContact
+			state.EverTouchedGround = true
+			state.RigidSphereTouchedGroundSet[index] = true
+			if state.RigidSpheres[index].Motion.Velocity.Y.Cmp(fixed.Zero) > 0 {
+				state.RigidSphereBounceDetectedSet[index] = true
+			}
+		}
+
+		if state.RigidSphereBounceDetectedSet[index] &&
+			state.RigidSpheres[index].Motion.Position.Y.Cmp(state.RigidSpherePeakBounceHeights[index]) > 0 {
+			state.RigidSpherePeakBounceHeights[index] = state.RigidSpheres[index].Motion.Position.Y
+		}
+
+		if state.RigidSpheres[index].Orientation.W != initialOrientation.W ||
+			state.RigidSpheres[index].Orientation.X != initialOrientation.X ||
+			state.RigidSpheres[index].Orientation.Y != initialOrientation.Y ||
+			state.RigidSpheres[index].Orientation.Z != initialOrientation.Z {
+			state.RigidSphereRotationChangedSet[index] = true
+		}
+	}
+
+	if len(state.RigidSpheres) > 0 {
+		state.RigidSphere = state.RigidSpheres[0]
+	}
+	if len(state.LastContacts) > 0 {
+		state.LastContact = state.LastContacts[0]
+	}
+}
+
 func makeFlatGroundTriangles() []geometry.Triangle {
 	min := fixed.FromInt(-20)
 	max := fixed.FromInt(20)
@@ -1229,4 +1674,55 @@ func makeFlatStripBox(minX, maxX fixed.Fixed) geometry.AxisAlignedBoundingBox {
 		geometry.NewVector3(minX, fixed.FromInt(-1), fixed.FromInt(-10)),
 		geometry.NewVector3(maxX, fixed.Zero, fixed.FromInt(10)),
 	)
+}
+
+func makeSlopePatchTriangles(patches []smallSlopePatchSpec) []geometry.Triangle {
+	triangles := make([]geometry.Triangle, 0, len(patches)*2)
+	for _, patch := range patches {
+		triangles = append(triangles, makeSmallSlopePatchTriangles(patch)...)
+	}
+	return triangles
+}
+
+type smallSlopePatchSpec struct {
+	Center            geometry.Vector3
+	DownhillDirection geometry.Vector3
+	SlopePerUnit      fixed.Fixed
+}
+
+func makeNineSmallSlopePatchSpecs() []smallSlopePatchSpec {
+	return []smallSlopePatchSpec{
+		{Center: geometry.NewVector3(fixed.FromInt(-18), fixed.Zero, fixed.FromInt(-18)), DownhillDirection: geometry.NewVector3(fixed.One, fixed.Zero, fixed.Zero), SlopePerUnit: fixed.FromFraction(176327, 1000000)},
+		{Center: geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.FromInt(-18)), DownhillDirection: geometry.NewVector3(fixed.One, fixed.Zero, fixed.One).Normalize(), SlopePerUnit: fixed.FromFraction(120000, 1000000)},
+		{Center: geometry.NewVector3(fixed.FromInt(18), fixed.Zero, fixed.FromInt(-18)), DownhillDirection: geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.One), SlopePerUnit: fixed.FromFraction(220000, 1000000)},
+		{Center: geometry.NewVector3(fixed.FromInt(-18), fixed.Zero, fixed.Zero), DownhillDirection: geometry.NewVector3(fixed.One, fixed.Zero, fixed.One.Neg()).Normalize(), SlopePerUnit: fixed.FromFraction(150000, 1000000)},
+		{Center: geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.Zero), DownhillDirection: geometry.NewVector3(fixed.One.Neg(), fixed.Zero, fixed.Zero), SlopePerUnit: fixed.FromFraction(200000, 1000000)},
+		{Center: geometry.NewVector3(fixed.FromInt(18), fixed.Zero, fixed.Zero), DownhillDirection: geometry.NewVector3(fixed.One.Neg(), fixed.Zero, fixed.One).Normalize(), SlopePerUnit: fixed.FromFraction(135000, 1000000)},
+		{Center: geometry.NewVector3(fixed.FromInt(-18), fixed.Zero, fixed.FromInt(18)), DownhillDirection: geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.One.Neg()), SlopePerUnit: fixed.FromFraction(240000, 1000000)},
+		{Center: geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.FromInt(18)), DownhillDirection: geometry.NewVector3(fixed.One.Neg(), fixed.Zero, fixed.One.Neg()).Normalize(), SlopePerUnit: fixed.FromFraction(165000, 1000000)},
+		{Center: geometry.NewVector3(fixed.FromInt(18), fixed.Zero, fixed.FromInt(18)), DownhillDirection: geometry.NewVector3(fixed.One, fixed.Zero, fixed.One.Neg()).Normalize(), SlopePerUnit: fixed.FromFraction(190000, 1000000)},
+	}
+}
+
+func makeSmallSlopePatchTriangles(patch smallSlopePatchSpec) []geometry.Triangle {
+	halfWidth := fixed.FromInt(7)
+	aOffset := geometry.NewVector3(halfWidth.Neg(), fixed.Zero, halfWidth.Neg())
+	bOffset := geometry.NewVector3(halfWidth, fixed.Zero, halfWidth.Neg())
+	cOffset := geometry.NewVector3(halfWidth.Neg(), fixed.Zero, halfWidth)
+	dOffset := geometry.NewVector3(halfWidth, fixed.Zero, halfWidth)
+
+	a := patch.Center.Add(withSlopeHeight(aOffset, patch.DownhillDirection, patch.SlopePerUnit))
+	b := patch.Center.Add(withSlopeHeight(bOffset, patch.DownhillDirection, patch.SlopePerUnit))
+	c := patch.Center.Add(withSlopeHeight(cOffset, patch.DownhillDirection, patch.SlopePerUnit))
+	d := patch.Center.Add(withSlopeHeight(dOffset, patch.DownhillDirection, patch.SlopePerUnit))
+
+	return []geometry.Triangle{
+		geometry.NewTriangle(a, c, b),
+		geometry.NewTriangle(c, d, b),
+	}
+}
+
+func withSlopeHeight(offset geometry.Vector3, downhillDirection geometry.Vector3, slopePerUnit fixed.Fixed) geometry.Vector3 {
+	height := offset.Dot(downhillDirection).Mul(slopePerUnit).Neg()
+	return geometry.NewVector3(offset.X, height, offset.Z)
 }

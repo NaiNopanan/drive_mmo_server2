@@ -65,6 +65,7 @@ func HashSceneState(state SceneState) uint64 {
 	writeBool(state.Sphere.Grounded)
 	writeBool(state.EverTouchedGround)
 	writeBool(state.BounceDetected)
+	writeBool(state.SphereSphereCollisionDetected)
 	writeUint64(uint64(len(state.BounceDetectedSet)))
 	for _, value := range state.BounceDetectedSet {
 		writeBool(value)
@@ -85,6 +86,58 @@ func HashSceneState(state SceneState) uint64 {
 		writeFixed(sphere.Radius)
 		writeFixed(sphere.Restitution)
 		writeBool(sphere.Grounded)
+	}
+	writeVector3(state.RigidSphere.Motion.Position)
+	writeVector3(state.RigidSphere.Motion.Velocity)
+	writeVector3(state.RigidSphere.Motion.AccumulatedForce)
+	writeFixed(state.RigidSphere.Motion.Mass)
+	writeFixed(state.RigidSphere.Motion.InverseMass)
+	writeFixed(state.RigidSphere.Radius)
+	writeFixed(state.RigidSphere.Restitution)
+	writeFixed(state.RigidSphere.Friction)
+	writeBool(state.RigidSphere.Grounded)
+	writeFixed(state.RigidSphere.Orientation.W)
+	writeFixed(state.RigidSphere.Orientation.X)
+	writeFixed(state.RigidSphere.Orientation.Y)
+	writeFixed(state.RigidSphere.Orientation.Z)
+	writeVector3(state.RigidSphere.AngularVelocity)
+	writeFixed(state.RigidSphere.InverseInertia)
+	writeBool(state.RigidSphereBounceDetected)
+	writeFixed(state.RigidSpherePeakBounceHeight)
+	writeBool(state.RigidSphereRotationChanged)
+	writeUint64(uint64(len(state.RigidSphereTouchedGroundSet)))
+	for _, value := range state.RigidSphereTouchedGroundSet {
+		writeBool(value)
+	}
+	writeUint64(uint64(len(state.RigidSpheres)))
+	for _, sphere := range state.RigidSpheres {
+		writeVector3(sphere.Motion.Position)
+		writeVector3(sphere.Motion.Velocity)
+		writeVector3(sphere.Motion.AccumulatedForce)
+		writeFixed(sphere.Motion.Mass)
+		writeFixed(sphere.Motion.InverseMass)
+		writeFixed(sphere.Radius)
+		writeFixed(sphere.Restitution)
+		writeFixed(sphere.Friction)
+		writeBool(sphere.Grounded)
+		writeFixed(sphere.Orientation.W)
+		writeFixed(sphere.Orientation.X)
+		writeFixed(sphere.Orientation.Y)
+		writeFixed(sphere.Orientation.Z)
+		writeVector3(sphere.AngularVelocity)
+		writeFixed(sphere.InverseInertia)
+	}
+	writeUint64(uint64(len(state.RigidSphereBounceDetectedSet)))
+	for _, value := range state.RigidSphereBounceDetectedSet {
+		writeBool(value)
+	}
+	writeUint64(uint64(len(state.RigidSpherePeakBounceHeights)))
+	for _, value := range state.RigidSpherePeakBounceHeights {
+		writeFixed(value)
+	}
+	writeUint64(uint64(len(state.RigidSphereRotationChangedSet)))
+	for _, value := range state.RigidSphereRotationChangedSet {
+		writeBool(value)
 	}
 	writeUint64(uint64(len(state.LastContacts)))
 	for _, contact := range state.LastContacts {
@@ -153,6 +206,35 @@ func HashSceneState(state SceneState) uint64 {
 	writeBool(state.RigidBoxBounceDetected)
 	writeFixed(state.RigidBoxPeakBounceHeight)
 	writeBool(state.RigidBoxRotationChanged)
+	writeUint64(uint64(len(state.RigidBoxes)))
+	for _, box := range state.RigidBoxes {
+		writeVector3(box.Motion.Position)
+		writeVector3(box.Motion.Velocity)
+		writeVector3(box.Motion.AccumulatedForce)
+		writeFixed(box.Motion.Mass)
+		writeFixed(box.Motion.InverseMass)
+		writeVector3(box.HalfExtents)
+		writeFixed(box.Restitution)
+		writeBool(box.Grounded)
+		writeFixed(box.Orientation.W)
+		writeFixed(box.Orientation.X)
+		writeFixed(box.Orientation.Y)
+		writeFixed(box.Orientation.Z)
+		writeVector3(box.AngularVelocity)
+		writeVector3(box.InverseInertiaBody)
+	}
+	writeUint64(uint64(len(state.RigidBoxBounceDetectedSet)))
+	for _, value := range state.RigidBoxBounceDetectedSet {
+		writeBool(value)
+	}
+	writeUint64(uint64(len(state.RigidBoxPeakBounceHeights)))
+	for _, value := range state.RigidBoxPeakBounceHeights {
+		writeFixed(value)
+	}
+	writeUint64(uint64(len(state.RigidBoxRotationChangedSet)))
+	for _, value := range state.RigidBoxRotationChangedSet {
+		writeBool(value)
+	}
 	writeUint64(uint64(len(state.GroundTriangles)))
 	for _, triangle := range state.GroundTriangles {
 		writeTriangle(triangle)

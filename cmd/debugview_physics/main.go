@@ -34,6 +34,10 @@ func vector3ToRaylibVector(value geometry.Vector3) rl.Vector3 {
 	)
 }
 
+func fixedToText(value fixed.Fixed) string {
+	return value.String()
+}
+
 func drawWorldAxes() {
 	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(3, 0, 0), rl.Red)
 	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(0, 3, 0), rl.Green)
@@ -90,6 +94,47 @@ func drawSphereBody(body physics.SphereBody) {
 func drawSphereBodies(bodies []physics.SphereBody) {
 	for _, body := range bodies {
 		drawSphereBody(body)
+	}
+}
+
+func drawRigidSphereBody(body physics.RigidSphereBody3D) {
+	position := vector3ToRaylibVector(body.Motion.Position)
+	radius := fixedToFloat32(body.Radius)
+	color := rl.Orange
+	wireColor := rl.Brown
+	if body.Grounded {
+		color = rl.Green
+		wireColor = rl.DarkGreen
+	}
+
+	rl.DrawSphere(position, radius, color)
+	rl.DrawSphereWires(position, radius, 16, 16, wireColor)
+
+	axisLength := body.Radius.Mul(fixed.FromFraction(6, 5))
+	localAxes := []struct {
+		Axis  geometry.Vector3
+		Color rl.Color
+	}{
+		{Axis: geometry.NewVector3(axisLength, fixed.Zero, fixed.Zero), Color: rl.Red},
+		{Axis: geometry.NewVector3(fixed.Zero, axisLength, fixed.Zero), Color: rl.Blue},
+		{Axis: geometry.NewVector3(fixed.Zero, fixed.Zero, axisLength), Color: rl.Gold},
+	}
+	for _, axis := range localAxes {
+		worldAxis := body.Orientation.RotateVector(axis.Axis)
+		rl.DrawLine3D(position, vector3ToRaylibVector(body.Motion.Position.Add(worldAxis)), axis.Color)
+	}
+
+	velocityEnd := rl.NewVector3(
+		position.X+fixedToFloat32(body.Motion.Velocity.X)*0.25,
+		position.Y+fixedToFloat32(body.Motion.Velocity.Y)*0.25,
+		position.Z+fixedToFloat32(body.Motion.Velocity.Z)*0.25,
+	)
+	rl.DrawLine3D(position, velocityEnd, rl.Maroon)
+}
+
+func drawRigidSphereBodies(bodies []physics.RigidSphereBody3D) {
+	for _, body := range bodies {
+		drawRigidSphereBody(body)
 	}
 }
 
@@ -224,9 +269,18 @@ func drawRigidBoxBody(body physics.RigidBoxBody3D) {
 	rl.DrawLine3D(position, velocityEnd, rl.Red)
 }
 
-func sceneRigidBox(state scenario.SceneState) *physics.RigidBoxBody3D {
+func drawRigidBoxBodies(bodies []physics.RigidBoxBody3D) {
+	for _, body := range bodies {
+		drawRigidBoxBody(body)
+	}
+}
+
+func sceneRigidBoxes(state scenario.SceneState) []physics.RigidBoxBody3D {
+	if len(state.RigidBoxes) > 0 {
+		return state.RigidBoxes
+	}
 	if state.RigidBox.HalfExtents.X.Cmp(fixed.Zero) > 0 {
-		return &state.RigidBox
+		return []physics.RigidBoxBody3D{state.RigidBox}
 	}
 	return nil
 }
@@ -253,12 +307,102 @@ func drawContactDebugList(contacts []physics.SphereTriangleContact) {
 	}
 }
 
+func drawObjectLabel(camera rl.Camera3D, worldPosition geometry.Vector3, lines []string, color rl.Color) {
+	if len(lines) == 0 {
+		return
+	}
+
+	labelWorldPosition := worldPosition.Add(geometry.NewVector3(fixed.Zero, fixed.FromInt(2), fixed.Zero))
+	screenPosition := rl.GetWorldToScreen(vector3ToRaylibVector(labelWorldPosition), camera)
+	if screenPosition.X < -200 || screenPosition.X > float32(rl.GetScreenWidth()+200) ||
+		screenPosition.Y < -200 || screenPosition.Y > float32(rl.GetScreenHeight()+200) {
+		return
+	}
+
+	const lineHeight int32 = 16
+	padding := int32(6)
+	maxWidth := int32(0)
+	for _, line := range lines {
+		width := rl.MeasureText(line, 14)
+		if width > maxWidth {
+			maxWidth = width
+		}
+	}
+
+	x := int32(screenPosition.X) - maxWidth/2 - padding
+	y := int32(screenPosition.Y) - int32(len(lines))*lineHeight - padding
+	height := int32(len(lines))*lineHeight + padding*2
+	width := maxWidth + padding*2
+
+	rl.DrawRectangle(x, y, width, height, rl.Fade(rl.RayWhite, 0.9))
+	rl.DrawRectangleLines(x, y, width, height, color)
+	for index, line := range lines {
+		rl.DrawText(line, x+padding, y+padding+int32(index)*lineHeight, 14, color)
+	}
+}
+
+func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
+	for index, sphere := range sceneSpheres(state) {
+		lines := []string{
+			fmt.Sprintf("Sphere %d", index+1),
+			fmt.Sprintf("m=%s r=%s", fixedToText(sphere.Motion.Mass), fixedToText(sphere.Radius)),
+			fmt.Sprintf("vx=%s vy=%s", fixedToText(sphere.Motion.Velocity.X), fixedToText(sphere.Motion.Velocity.Y)),
+		}
+		if state.SphereSphereCollisionDetected {
+			lines = append(lines, "collision=true")
+		} else {
+			lines = append(lines, fmt.Sprintf("grounded=%v", sphere.Grounded))
+		}
+		drawObjectLabel(camera, sphere.Motion.Position, lines, rl.DarkBlue)
+	}
+
+	for index, sphere := range sceneRigidSpheres(state) {
+		lines := []string{
+			fmt.Sprintf("Rigid Sphere %d", index+1),
+			fmt.Sprintf("m=%s r=%s", fixedToText(sphere.Motion.Mass), fixedToText(sphere.Radius)),
+			fmt.Sprintf("vx=%s vy=%s", fixedToText(sphere.Motion.Velocity.X), fixedToText(sphere.Motion.Velocity.Y)),
+			fmt.Sprintf("grounded=%v", sphere.Grounded),
+		}
+		drawObjectLabel(camera, sphere.Motion.Position, lines, rl.Purple)
+	}
+
+	for index, box := range sceneBoxes(state) {
+		lines := []string{
+			fmt.Sprintf("Box %d", index+1),
+			fmt.Sprintf("m=%s", fixedToText(box.Motion.Mass)),
+			fmt.Sprintf("vx=%s vy=%s", fixedToText(box.Motion.Velocity.X), fixedToText(box.Motion.Velocity.Y)),
+			fmt.Sprintf("grounded=%v", box.Grounded),
+		}
+		drawObjectLabel(camera, box.Motion.Position, lines, rl.DarkGreen)
+	}
+
+	for index, box := range sceneRigidBoxes(state) {
+		lines := []string{
+			fmt.Sprintf("Rigid Box %d", index+1),
+			fmt.Sprintf("m=%s", fixedToText(box.Motion.Mass)),
+			fmt.Sprintf("vx=%s vy=%s", fixedToText(box.Motion.Velocity.X), fixedToText(box.Motion.Velocity.Y)),
+			fmt.Sprintf("grounded=%v", box.Grounded),
+		}
+		drawObjectLabel(camera, box.Motion.Position, lines, rl.Brown)
+	}
+}
+
 func sceneSpheres(state scenario.SceneState) []physics.SphereBody {
 	if len(state.Spheres) > 0 {
 		return state.Spheres
 	}
 	if state.Sphere.Radius.Cmp(fixed.Zero) > 0 {
 		return []physics.SphereBody{state.Sphere}
+	}
+	return nil
+}
+
+func sceneRigidSpheres(state scenario.SceneState) []physics.RigidSphereBody3D {
+	if len(state.RigidSpheres) > 0 {
+		return state.RigidSpheres
+	}
+	if state.RigidSphere.Radius.Cmp(fixed.Zero) > 0 {
+		return []physics.RigidSphereBody3D{state.RigidSphere}
 	}
 	return nil
 }
@@ -438,8 +582,9 @@ func statusColor(status scenario.ScenarioResultStatus) rl.Color {
 func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *scenario.ScenarioRunner, viewMode cameraViewMode) {
 	state := runner.State
 	spheres := sceneSpheres(state)
+	rigidSpheres := sceneRigidSpheres(state)
 	boxes := sceneBoxes(state)
-	rigidBox := sceneRigidBox(state)
+	rigidBoxes := sceneRigidBoxes(state)
 	contactNormal := state.LastContact.Normal
 	sceneHash := scenario.HashSceneState(state)
 
@@ -448,17 +593,22 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 	grounded := false
 	objectCount := len(spheres)
 
-	if rigidBox != nil {
-		position = rigidBox.Motion.Position
-		velocity = rigidBox.Motion.Velocity
-		grounded = rigidBox.Grounded
-		objectCount = 1
+	if len(rigidBoxes) > 0 {
+		position = rigidBoxes[0].Motion.Position
+		velocity = rigidBoxes[0].Motion.Velocity
+		grounded = rigidBoxes[0].Grounded
+		objectCount = len(rigidBoxes)
+	} else if len(rigidSpheres) > 0 {
+		position = rigidSpheres[0].Motion.Position
+		velocity = rigidSpheres[0].Motion.Velocity
+		grounded = rigidSpheres[0].Grounded
+		objectCount = len(rigidSpheres)
 	} else if len(boxes) > 0 {
 		position = boxes[0].Motion.Position
 		velocity = boxes[0].Motion.Velocity
 		grounded = boxes[0].Grounded
 		objectCount = len(boxes)
-	} else {
+	} else if len(spheres) > 0 {
 		position = spheres[0].Motion.Position
 		velocity = spheres[0].Motion.Velocity
 		grounded = spheres[0].Grounded
@@ -549,14 +699,17 @@ func main() {
 		previousViewMode := viewMode
 		viewMode = updateViewModeFromKeyboard(viewMode)
 		spheres := sceneSpheres(runner.State)
+		rigidSpheres := sceneRigidSpheres(runner.State)
 		boxes := sceneBoxes(runner.State)
-		rigidBox := sceneRigidBox(runner.State)
+		rigidBoxes := sceneRigidBoxes(runner.State)
 		focusSource := geometry.ZeroVector3()
-		if rigidBox != nil {
-			focusSource = rigidBox.Motion.Position
+		if len(rigidBoxes) > 0 {
+			focusSource = rigidBoxes[0].Motion.Position
+		} else if len(rigidSpheres) > 0 {
+			focusSource = rigidSpheres[0].Motion.Position
 		} else if len(boxes) > 0 {
 			focusSource = boxes[0].Motion.Position
-		} else {
+		} else if len(spheres) > 0 {
 			focusSource = spheres[0].Motion.Position
 		}
 		focus := rl.NewVector3(
@@ -598,13 +751,13 @@ func main() {
 		drawWorldAxes()
 		drawGroundTriangles(runner.State.GroundTriangles)
 		drawSphereBodies(sceneSpheres(runner.State))
+		drawRigidSphereBodies(sceneRigidSpheres(runner.State))
 		drawBoxBodies(sceneBoxes(runner.State))
-		if rigidBox := sceneRigidBox(runner.State); rigidBox != nil {
-			drawRigidBoxBody(*rigidBox)
-		}
+		drawRigidBoxBodies(sceneRigidBoxes(runner.State))
 		drawContactDebugList(sceneContacts(runner.State))
 		rl.EndMode3D()
 
+		drawSceneObjectLabels(camera, runner.State)
 		drawOverlayWithCameraMode(definitions[currentIndex], runner, viewMode)
 
 		rl.EndDrawing()

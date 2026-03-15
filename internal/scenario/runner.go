@@ -22,28 +22,42 @@ type ScenarioResult struct {
 }
 
 type SceneState struct {
-	Tick                     uint64
-	Sphere                   physics.SphereBody
-	Spheres                  []physics.SphereBody
-	Box                      physics.BoxBody
-	Boxes                    []physics.BoxBody
-	RigidBox                 physics.RigidBoxBody3D
-	GroundTriangles          []geometry.Triangle
-	GroundBoxes              []geometry.AxisAlignedBoundingBox
-	LastContact              physics.SphereTriangleContact
-	LastContacts             []physics.SphereTriangleContact
-	EverTouchedGround        bool
-	BounceDetected           bool
-	BounceDetectedSet        []bool
-	PeakBounceHeight         fixed.Fixed
-	PeakBounceHeights        []fixed.Fixed
-	BoxBounceDetectedSet     []bool
-	BoxPeakBounceHeights     []fixed.Fixed
-	BoxInitialRotations      []fixed.Fixed
-	BoxRotationChangedSet    []bool
-	RigidBoxBounceDetected   bool
-	RigidBoxPeakBounceHeight fixed.Fixed
-	RigidBoxRotationChanged  bool
+	Tick                          uint64
+	Sphere                        physics.SphereBody
+	Spheres                       []physics.SphereBody
+	RigidSphere                   physics.RigidSphereBody3D
+	RigidSpheres                  []physics.RigidSphereBody3D
+	Box                           physics.BoxBody
+	Boxes                         []physics.BoxBody
+	RigidBox                      physics.RigidBoxBody3D
+	RigidBoxes                    []physics.RigidBoxBody3D
+	GroundTriangles               []geometry.Triangle
+	GroundBoxes                   []geometry.AxisAlignedBoundingBox
+	LastContact                   physics.SphereTriangleContact
+	LastContacts                  []physics.SphereTriangleContact
+	EverTouchedGround             bool
+	BounceDetected                bool
+	SphereSphereCollisionDetected bool
+	BounceDetectedSet             []bool
+	PeakBounceHeight              fixed.Fixed
+	PeakBounceHeights             []fixed.Fixed
+	RigidSphereBounceDetected     bool
+	RigidSpherePeakBounceHeight   fixed.Fixed
+	RigidSphereRotationChanged    bool
+	RigidSphereTouchedGroundSet   []bool
+	RigidSphereBounceDetectedSet  []bool
+	RigidSpherePeakBounceHeights  []fixed.Fixed
+	RigidSphereRotationChangedSet []bool
+	BoxBounceDetectedSet          []bool
+	BoxPeakBounceHeights          []fixed.Fixed
+	BoxInitialRotations           []fixed.Fixed
+	BoxRotationChangedSet         []bool
+	RigidBoxBounceDetected        bool
+	RigidBoxPeakBounceHeight      fixed.Fixed
+	RigidBoxRotationChanged       bool
+	RigidBoxBounceDetectedSet     []bool
+	RigidBoxPeakBounceHeights     []fixed.Fixed
+	RigidBoxRotationChangedSet    []bool
 }
 
 type ScenarioDefinition struct {
