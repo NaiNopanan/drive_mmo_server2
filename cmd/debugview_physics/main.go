@@ -70,6 +70,20 @@ func drawGroundTriangles(triangles []geometry.Triangle) {
 	}
 }
 
+func drawBroadphaseDebugCells(cells []geometry.AxisAlignedBoundingBox) {
+	for _, cell := range cells {
+		center := cell.Min.Add(cell.Max).Scale(fixed.FromFraction(1, 2))
+		size := cell.Max.Sub(cell.Min)
+		rl.DrawCubeWires(
+			vector3ToRaylibVector(center),
+			fixedToFloat32(size.X),
+			fixedToFloat32(size.Y),
+			fixedToFloat32(size.Z),
+			rl.Fade(rl.Violet, 0.55),
+		)
+	}
+}
+
 func drawSphereBody(body physics.SphereBody) {
 	position := vector3ToRaylibVector(body.Motion.Position)
 	radius := fixedToFloat32(body.Radius)
@@ -811,6 +825,7 @@ func main() {
 		rl.DrawGrid(40, 1.0)
 		drawWorldAxes()
 		drawGroundTriangles(runner.State.GroundTriangles)
+		drawBroadphaseDebugCells(runner.State.BroadphaseDebugCells)
 		drawSphereBodies(sceneSpheres(runner.State))
 		drawRigidSphereBodies(sceneRigidSpheres(runner.State))
 		drawBoxBodies(sceneBoxes(runner.State))

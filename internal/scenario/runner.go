@@ -33,6 +33,7 @@ type SceneState struct {
 	RigidBoxes                         []physics.RigidBoxBody3D
 	GroundTriangles                    []geometry.Triangle
 	GroundBoxes                        []geometry.AxisAlignedBoundingBox
+	BroadphaseDebugCells               []geometry.AxisAlignedBoundingBox
 	LastContact                        physics.SphereTriangleContact
 	LastContacts                       []physics.SphereTriangleContact
 	EverTouchedGround                  bool

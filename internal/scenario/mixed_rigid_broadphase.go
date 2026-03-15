@@ -22,6 +22,7 @@ type mixedRigidBroadphasePairs struct {
 	BoxBox       [][2]int
 	SphereBox    [][2]int
 	CellCount    int
+	Cells        []geometry.AxisAlignedBoundingBox
 }
 
 func fixedFloorDiv(value, divisor fixed.Fixed) int64 {
@@ -95,11 +96,20 @@ func buildMixedRigidBroadphasePairs(spheres []physics.RigidSphereBody3D, boxes [
 	sphereSpherePairs := make([][2]int, 0)
 	boxBoxPairs := make([][2]int, 0)
 	sphereBoxPairs := make([][2]int, 0)
+	cells := make([]geometry.AxisAlignedBoundingBox, 0, len(buckets))
 	sphereSphereSeen := make(map[uint64]struct{})
 	boxBoxSeen := make(map[uint64]struct{})
 	sphereBoxSeen := make(map[uint64]struct{})
 
-	for _, bucket := range buckets {
+	for key, bucket := range buckets {
+		min := geometry.NewVector3(
+			cellSize.Mul(fixed.FromInt(key.X)),
+			cellSize.Mul(fixed.FromInt(key.Y)),
+			cellSize.Mul(fixed.FromInt(key.Z)),
+		)
+		max := min.Add(geometry.NewVector3(cellSize, cellSize, cellSize))
+		cells = append(cells, geometry.NewAxisAlignedBoundingBox(min, max))
+
 		for first := 0; first < len(bucket.SphereIndices); first++ {
 			for second := first + 1; second < len(bucket.SphereIndices); second++ {
 				addMixedRigidPair(sphereSphereSeen, bucket.SphereIndices[first], bucket.SphereIndices[second], &sphereSpherePairs)
@@ -127,6 +137,7 @@ func buildMixedRigidBroadphasePairs(spheres []physics.RigidSphereBody3D, boxes [
 		BoxBox:       boxBoxPairs,
 		SphereBox:    sphereBoxPairs,
 		CellCount:    len(buckets),
+		Cells:        cells,
 	}
 }
 
@@ -144,6 +155,7 @@ func StepHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScene(state *Scene
 	state.SphereSphereHitCount = 0
 	state.BoxBoxHitCount = 0
 	state.SphereBoxHitCount = 0
+	state.BroadphaseDebugCells = nil
 
 	minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
 
@@ -168,6 +180,7 @@ func StepHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScene(state *Scene
 	state.SphereSphereCandidateCount = len(pairs.SphereSphere)
 	state.BoxBoxCandidateCount = len(pairs.BoxBox)
 	state.SphereBoxCandidateCount = len(pairs.SphereBox)
+	state.BroadphaseDebugCells = pairs.Cells
 
 	for pass := 0; pass < 2; pass++ {
 		for _, pair := range pairs.SphereSphere {
