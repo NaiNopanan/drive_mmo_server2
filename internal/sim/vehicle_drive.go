@@ -99,10 +99,7 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 	w.LatSpeed = pv.Dot(right)
 
 	// Drive force
-	w.DriveForce = fixed.Zero
-	if v.WheelDefs[i].IsDriven {
-		w.DriveForce = v.Input.Throttle.Mul(v.Tuning.DriveForce)
-	}
+	w.DriveForce = v.Input.Throttle.Mul(v.Tuning.DriveForce)
 
 	// Brake force
 	w.BrakeForce = fixed.Zero

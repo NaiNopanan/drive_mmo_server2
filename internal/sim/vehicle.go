@@ -46,7 +46,6 @@ type WheelDef struct {
 	ID          int
 	LocalAnchor geom.Vec3
 	IsFront     bool
-	IsDriven    bool
 }
 
 type WheelState struct {
@@ -130,7 +129,7 @@ func DefaultTuning() VehicleTuning {
 
 		SuspensionStiffness: fixed.FromInt(30000),
 		SuspensionDamping:   fixed.FromInt(5000),
-		MaxSuspensionForce:   fixed.FromInt(30000),
+		MaxSuspensionForce:  fixed.FromInt(30000),
 
 		WheelRadius:       fixed.FromFraction(34, 100),
 		DriveForce:        fixed.FromInt(10000),
@@ -142,8 +141,7 @@ func DefaultTuning() VehicleTuning {
 	}
 }
 
-// PrototypeTuning returns an AWD-tuned vehicle with forgiving handling,
-// ideal for prototype testing where driveability matters more than realism.
+// PrototypeTuning returns forgiving vehicle tuning suitable for prototype driving.
 func PrototypeTuning() VehicleTuning {
 	t := DefaultTuning()
 	t.MaxSpeed = fixed.FromInt(100)
@@ -167,23 +165,12 @@ func NewVehicle(id uint32, pos geom.Vec3) Vehicle {
 	hx := t.TrackWidth.Div(fixed.FromInt(2))
 	hz := t.WheelBase.Div(fixed.FromInt(2))
 
-	// RWD: ล้อหลังขับ, ล้อหน้าเลี้ยว — ขับสนุกกว่า FWD สำหรับ prototype
+	// AWD: all four wheels are driven, while steering remains on the front axle.
 	v.WheelDefs = [4]WheelDef{
-		{ID: 0, IsFront: true, IsDriven: false, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz)},
-		{ID: 1, IsFront: true, IsDriven: false, LocalAnchor: geom.V3(hx, fixed.Zero, hz)},
-		{ID: 2, IsFront: false, IsDriven: true, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz.Neg())},
-		{ID: 3, IsFront: false, IsDriven: true, LocalAnchor: geom.V3(hx, fixed.Zero, hz.Neg())},
-	}
-
-	return v
-}
-
-// NewAWDVehicle creates a vehicle with all-wheel drive — easiest to prototype with.
-func NewAWDVehicle(id uint32, pos geom.Vec3) Vehicle {
-	v := NewVehicle(id, pos)
-	// Default: AWD for prototype (easy to drive, high traction)
-	for i := range v.WheelDefs {
-		v.WheelDefs[i].IsDriven = true
+		{ID: 0, IsFront: true, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz)},
+		{ID: 1, IsFront: true, LocalAnchor: geom.V3(hx, fixed.Zero, hz)},
+		{ID: 2, IsFront: false, LocalAnchor: geom.V3(hx.Neg(), fixed.Zero, hz.Neg())},
+		{ID: 3, IsFront: false, LocalAnchor: geom.V3(hx, fixed.Zero, hz.Neg())},
 	}
 
 	return v

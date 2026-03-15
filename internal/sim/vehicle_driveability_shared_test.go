@@ -144,7 +144,7 @@ func runDriveabilityForwardSmoothFlat(t *testing.T, p driveProfile) {
 
 	g := driveabilityFlatGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 
 	settleDriveabilityVehicle(&v, g, dt, 120)
 	startZ := v.Position.Z
@@ -184,7 +184,7 @@ func runDriveabilitySteeringSmoothFlat(t *testing.T, p driveProfile) {
 
 	g := driveabilityFlatGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 
 	settleDriveabilityVehicle(&v, g, dt, 120)
 
@@ -236,7 +236,7 @@ func runDriveabilityReverseSmoothFlat(t *testing.T, p driveProfile) {
 
 	g := driveabilityFlatGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 
 	settleDriveabilityVehicle(&v, g, dt, 120)
 	startZ := v.Position.Z
@@ -271,7 +271,7 @@ func runDriveabilityUphillSmooth(t *testing.T, p driveProfile) {
 
 	g := driveabilitySlopeGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-30)))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-30)))
 
 	settleDriveabilityVehicle(&v, g, dt, 180)
 	startZ := v.Position.Z
@@ -280,7 +280,6 @@ func runDriveabilityUphillSmooth(t *testing.T, p driveProfile) {
 	trace := traceDriveability(&v, g, dt, 300, func(i int) VehicleInput {
 		return VehicleInput{Throttle: fixed.One}
 	})
-
 
 	checkpoints := []int{59, 119, 179, 239, 299}
 	lastZ := startZ
@@ -318,7 +317,7 @@ func runDriveabilityDownhillSmooth(t *testing.T, p driveProfile) {
 
 	g := driveabilitySlopeGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(6), fixed.FromInt(20)))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(6), fixed.FromInt(20)))
 
 	settleDriveabilityVehicle(&v, g, dt, 180)
 	startZ := v.Position.Z
@@ -348,7 +347,7 @@ func runDriveabilitySteerOnSlopeSmooth(t *testing.T, p driveProfile) {
 
 	g := driveabilitySlopeGround()
 	dt := fixed.FromFraction(1, 60)
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-25)))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.FromInt(-25)))
 
 	settleDriveabilityVehicle(&v, g, dt, 180)
 	startX := v.Position.X
@@ -361,7 +360,6 @@ func runDriveabilitySteerOnSlopeSmooth(t *testing.T, p driveProfile) {
 			Steer:    fixed.FromFraction(15, 100), // 0.15 instead of 0.40
 		}
 	})
-
 
 	deltaZ := trace[len(trace)-1].Pos.Z.Sub(startZ)
 	if deltaZ.Cmp(p.SlopeSteerMinProgressZ) <= 0 {

@@ -10,7 +10,7 @@ import (
 // TestVehicleSteeringLeftChangesYawNegative verifies that steering Left
 // (Steer < 0) results in negative Yaw and negative X movement.
 func TestVehicleSteeringLeftChangesYawNegative(t *testing.T) {
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 	g := FlatGround{
 		Y:    fixed.Zero,
 		MinX: fixed.FromInt(-100), MaxX: fixed.FromInt(100),
@@ -48,7 +48,7 @@ func TestVehicleSteeringLeftChangesYawNegative(t *testing.T) {
 // TestVehicleSteeringRightChangesYawPositive verifies that steering Right
 // (Steer > 0) results in positive Yaw and positive X movement.
 func TestVehicleSteeringRightChangesYawPositive(t *testing.T) {
-	v := NewAWDVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
+	v := NewVehicle(1, geom.V3(fixed.Zero, fixed.FromInt(3), fixed.Zero))
 	g := FlatGround{
 		Y:    fixed.Zero,
 		MinX: fixed.FromInt(-100), MaxX: fixed.FromInt(100),

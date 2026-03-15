@@ -14,7 +14,7 @@ func testSlopeGround() SlopeGround {
 		BaseY: fixed.Zero,
 		Slope: fixed.FromFraction(1, 10), // 0.1 = 8m/80m
 		MinX:  fixed.FromInt(-100), MaxX: fixed.FromInt(100),
-		MinZ:  fixed.FromInt(-100), MaxZ: fixed.FromInt(100),
+		MinZ: fixed.FromInt(-100), MaxZ: fixed.FromInt(100),
 	}
 }
 
@@ -152,7 +152,7 @@ func TestVehicleClimbsTriangleSlope(t *testing.T) {
 	startY := v.Position.Y
 	t.Logf("Start pos: Z=%v Y=%v OnGround=%v", startZ, startY, v.OnGround)
 
-	// Drive forward for 3 seconds (AWD + 10k force is fast, so 3s is enough)
+	// Drive forward for 3 seconds; current drive force is high enough that 3s is sufficient.
 	for i := 0; i < 180; i++ {
 		v.Input = VehicleInput{Throttle: fixed.One}
 		v.Step(dt, g)
@@ -283,8 +283,10 @@ func TestSlope_NoRapidGroundContactFlappingWhileClimbing(t *testing.T) {
 	settleVehicleOnSlope(&v, g, dt, 180)
 
 	// Build a little speed first so the contact system is exercised under load.
+	// With AWD-only vehicles, half the previous throttle keeps the nominal drive
+	// load close to the old baseline from the former 2-wheel-drive setup.
 	for i := 0; i < 60; i++ {
-		v.Input = VehicleInput{Throttle: fixed.FromFraction(5, 10)}
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(1, 4)}
 		v.Step(dt, g)
 	}
 
@@ -294,7 +296,7 @@ func TestSlope_NoRapidGroundContactFlappingWhileClimbing(t *testing.T) {
 	samples := 180
 
 	for i := 0; i < samples; i++ {
-		v.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+		v.Input = VehicleInput{Throttle: fixed.FromFraction(3, 10)}
 		v.Step(dt, g)
 
 		nowStable := v.GroundedWheels >= 2

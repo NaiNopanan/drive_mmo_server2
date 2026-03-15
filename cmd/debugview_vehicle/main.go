@@ -173,12 +173,12 @@ func drawVehicleChassis(v sim.Vehicle, color rl.Color) {
 	corners := [8]geom.Vec3{
 		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz.Neg())), // 0
 		c.Add(right.Scale(hx)).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz.Neg())),       // 1
-		c.Add(right.Scale(hx)).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz)),              // 2
-		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz)),        // 3
-		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy)).Add(forward.Scale(hz.Neg())),        // 4
-		c.Add(right.Scale(hx)).Add(up.Scale(hy)).Add(forward.Scale(hz.Neg())),              // 5
-		c.Add(right.Scale(hx)).Add(up.Scale(hy)).Add(forward.Scale(hz)),                    // 6
-		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy)).Add(forward.Scale(hz)),              // 7
+		c.Add(right.Scale(hx)).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz)),             // 2
+		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy.Neg())).Add(forward.Scale(hz)),       // 3
+		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy)).Add(forward.Scale(hz.Neg())),       // 4
+		c.Add(right.Scale(hx)).Add(up.Scale(hy)).Add(forward.Scale(hz.Neg())),             // 5
+		c.Add(right.Scale(hx)).Add(up.Scale(hy)).Add(forward.Scale(hz)),                   // 6
+		c.Add(right.Scale(hx.Neg())).Add(up.Scale(hy)).Add(forward.Scale(hz)),             // 7
 	}
 
 	edges := [][2]int{
@@ -213,9 +213,9 @@ func drawVehicle(v sim.Vehicle, selected bool) {
 	for wi := range v.Wheels {
 		w := v.Wheels[wi]
 		def := v.WheelDefs[wi]
-		
+
 		anchorWS := v.Position.Add(v.LocalToWorld(def.LocalAnchor))
-		
+
 		// wheel center calculation
 		rayOrigin := anchorWS.Add(geom.V3(fixed.Zero, v.Tuning.SuspensionMaxRaise, fixed.Zero))
 		center := rayOrigin.Add(geom.V3(fixed.Zero, w.ContactDistance.Neg(), fixed.Zero))
@@ -225,10 +225,10 @@ func drawVehicle(v sim.Vehicle, selected bool) {
 
 		if w.InContact {
 			rl.DrawSphere(vecToRL(w.ContactPoint), 0.08, contactColor)
-			
+
 			// Suspension force arrow (Cyan)
 			rl.DrawLine3D(vecToRL(w.ContactPoint), vecToRL(w.ContactPoint.Add(w.ContactNormal.Scale(w.SuspensionForce.Div(fixed.FromInt(10000))))), rl.SkyBlue)
-			
+
 			// Drive/Brake/Total lateral arrow? Let's just do fwd/right vectors at wheel
 			rl.DrawLine3D(vecToRL(center), vecToRL(center.Add(w.WheelForwardWS.Scale(fixed.FromInt(1)))), rl.Blue)
 			rl.DrawLine3D(vecToRL(center), vecToRL(center.Add(w.WheelRightWS.Scale(fixed.FromInt(1)))), rl.Yellow)
@@ -241,7 +241,7 @@ func spawnGrid(rows, cols int) []sim.Vehicle {
 	id := uint32(1)
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
-			vs = append(vs, sim.NewAWDVehicle(id, geom.V3(
+			vs = append(vs, sim.NewVehicle(id, geom.V3(
 				fixed.FromInt(int64(c*4)),
 				fixed.FromInt(15),
 				fixed.FromInt(int64(r*6)),
@@ -269,8 +269,6 @@ func main() {
 		LookSpeed: 80,
 	}
 
-	useFlatGround := true
-	_ = useFlatGround
 	world := sim.VehicleWorldDay6{
 		Ground: sim.FlatGround{
 			Y:    fixed.Zero,
@@ -284,6 +282,11 @@ func main() {
 	paused := false
 	stepOnce := false
 	invertSteerInput := true
+	resetVehicles := func() {
+		world.Vehicles = spawnGrid(3, 4)
+		world.Tick = 0
+		selected = 0
+	}
 
 	for !rl.WindowShouldClose() {
 		dtFixed := fixed.FromFraction(1, 60)
@@ -295,34 +298,30 @@ func main() {
 			stepOnce = true
 		}
 		if rl.IsKeyPressed(rl.KeyR) {
-			world.Vehicles = spawnGrid(3, 4)
-			world.Tick = 0
+			resetVehicles()
 		}
 		if rl.IsKeyPressed(rl.KeyOne) {
-			useFlatGround = true
 			world.Ground = sim.FlatGround{
 				Y:    fixed.Zero,
 				MinX: fixed.FromInt(-50), MaxX: fixed.FromInt(50),
 				MinZ: fixed.FromInt(-50), MaxZ: fixed.FromInt(50),
 			}
-			world.Vehicles = spawnGrid(3, 4)
+			resetVehicles()
 		}
 		if rl.IsKeyPressed(rl.KeyTwo) {
-			useFlatGround = false
 			world.Ground = sim.SlopeGround{
 				BaseY: fixed.Zero,
 				Slope: fixed.FromFraction(2, 10),
 				MinX:  fixed.FromInt(-40), MaxX: fixed.FromInt(40),
-				MinZ:  fixed.FromInt(-40), MaxZ: fixed.FromInt(40),
+				MinZ: fixed.FromInt(-40), MaxZ: fixed.FromInt(40),
 			}
-			world.Vehicles = spawnGrid(3, 4)
+			resetVehicles()
 		}
 		if rl.IsKeyPressed(rl.KeyThree) {
-			useFlatGround = false
 			world.Ground = sim.WorldGroundQuery{
 				Triangles: sim.GroundSlopeSmall(),
 			}
-			world.Vehicles = spawnGrid(3, 4)
+			resetVehicles()
 		}
 		if rl.IsKeyPressed(rl.KeyTab) {
 			selected++
@@ -383,7 +382,7 @@ func main() {
 			in := &world.Vehicles[selected].Input
 			in.Throttle = approachFixed(in.Throttle, target.Throttle, fixed.FromFraction(1, 10)) // 0.10 / tick
 			in.Steer = approachFixed(in.Steer, target.Steer, fixed.FromFraction(3, 20))          // 0.15 / tick
-			in.Brake = approachFixed(in.Brake, target.Brake, fixed.FromFraction(1, 5))            // 0.20 / tick
+			in.Brake = approachFixed(in.Brake, target.Brake, fixed.FromFraction(1, 5))           // 0.20 / tick
 		}
 
 		if !paused || stepOnce {
@@ -421,7 +420,7 @@ func main() {
 			minZ := fixedToF(g.MinZ)
 			maxZ := fixedToF(g.MaxZ)
 			color := rl.Fade(rl.Purple, 0.4)
-			
+
 			step := float32(2.0)
 			for x := minX; x <= maxX; x += step {
 				y0 := fixedToF(g.BaseY.Add(g.Slope.Mul(fixed.FromInt(int64(minZ)))))
@@ -448,7 +447,7 @@ func main() {
 				rl.DrawLine3D(a, b, rl.DarkPurple)
 				rl.DrawLine3D(b, c, rl.DarkPurple)
 				rl.DrawLine3D(c, a, rl.DarkPurple)
-				
+
 				// Draw normal vector for each triangle to see surface better
 				center := rl.NewVector3((a.X+b.X+c.X)/3, (a.Y+b.Y+c.Y)/3, (a.Z+b.Z+c.Z)/3)
 				n := vecToRL(tri.Normal())
@@ -465,22 +464,22 @@ func main() {
 		// status overlay
 		rl.DrawRectangle(10, 10, 520, 360, rl.Fade(rl.SkyBlue, 0.18))
 		v := world.Vehicles[selected]
-		
+
 		rl.DrawText(fmt.Sprintf("Tick: %d | Vehicle: %d", world.Tick, selected), 20, 20, 22, rl.Black)
 		rl.DrawText(fmt.Sprintf("Pos: (%.2f, %.2f, %.2f)", fixedToF(v.Position.X), fixedToF(v.Position.Y), fixedToF(v.Position.Z)), 20, 48, 18, rl.Black)
 		rl.DrawText(fmt.Sprintf("Vel: (%.2f, %.2f, %.2f) Speed: %.2f", fixedToF(v.Velocity.X), fixedToF(v.Velocity.Y), fixedToF(v.Velocity.Z), fixedToF(v.Velocity.Length())), 20, 72, 18, rl.Black)
 		rl.DrawText(fmt.Sprintf("Yaw: %.2f YawVel: %.2f", fixedToF(v.Yaw), fixedToF(v.YawVelocity)), 20, 96, 18, rl.Black)
 		rl.DrawText(fmt.Sprintf("Grounded: %d OnGround: %v", v.GroundedWheels, v.OnGround), 20, 120, 18, rl.Black)
-		
+
 		for i := range v.Wheels {
 			w := v.Wheels[i]
-			rl.DrawText(fmt.Sprintf("W%d: Contact=%v Comp=%.3f SuspF=%.0f LatF=%.0f Steer=%.1f", 
-				i, w.InContact, fixedToF(w.Compression), fixedToF(w.SuspensionForce), fixedToF(w.LateralForce), 180*fixedToF(w.SteerAngleRad)/math.Pi), 
+			rl.DrawText(fmt.Sprintf("W%d: Contact=%v Comp=%.3f SuspF=%.0f LatF=%.0f Steer=%.1f",
+				i, w.InContact, fixedToF(w.Compression), fixedToF(w.SuspensionForce), fixedToF(w.LateralForce), 180*fixedToF(w.SteerAngleRad)/math.Pi),
 				20, int32(150+i*22), 16, rl.DarkGray)
 		}
 
 		rl.DrawText("Controls: Up=forward, Down=reverse, Left/Right=steer, Ctrl=brake", 20, 300, 18, rl.DarkBlue)
-		rl.DrawText(fmt.Sprintf("Viewer: Tab=cycle, Space=pause, N=step, R=reset, 1/2/3=ground, V=invert steer (%v)", invertSteerInput), 20, 325, 18, rl.DarkBlue)
+		rl.DrawText(fmt.Sprintf("Viewer: Tab=cycle, Space=pause, N=step, R=reset, 1/2/3=ground (AWD only), V=invert steer (%v)", invertSteerInput), 20, 325, 18, rl.DarkBlue)
 		rl.DrawText("Flycam: WASD/QE + JLI/K", 20, 350, 18, rl.DarkBlue)
 
 		rl.EndDrawing()
