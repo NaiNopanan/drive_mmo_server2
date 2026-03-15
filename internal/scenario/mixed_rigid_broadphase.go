@@ -275,3 +275,21 @@ func StepHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScene(state *Scene
 		state.RigidBox = state.RigidBoxes[0]
 	}
 }
+
+func StepRigidSphereHighSpeedThinWallProjectileScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	result := physics.StepRigidSphereBody3DWithGravity(
+		&state.RigidSphere,
+		physics.DefaultTimeStep,
+		geometry.ZeroVector3(),
+		state.GroundTriangles,
+	)
+	if result.HadContact {
+		state.LastContact = result.LastContact
+		state.EverTouchedGround = true
+	}
+}

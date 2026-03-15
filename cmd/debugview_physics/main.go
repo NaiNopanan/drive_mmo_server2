@@ -430,7 +430,8 @@ func shouldDrawObjectLabels(definition scenario.ScenarioDefinition) bool {
 		definition.Name != "Hundred Rigid Boxes In Box Angle" &&
 		definition.Name != "Fifty Rigid Spheres And Fifty Rigid Boxes In Box" &&
 		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box" &&
-		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized"
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized High Speed"
 }
 
 func sceneSpheres(state scenario.SceneState) []physics.SphereBody {

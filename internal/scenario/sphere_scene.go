@@ -34,6 +34,8 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewFiftyRigidSpheresAndFiftyRigidBoxesInBoxScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario(),
+		NewRigidSphereHighSpeedThinWallProjectileScenario(),
 	}
 }
 
@@ -2044,6 +2046,186 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario() Scenario
 	}
 }
 
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario() ScenarioDefinition {
+	const scenarioTicks = 360
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized High Speed",
+		Description: "One hundred rigid spheres and one hundred rigid boxes start with high downward speed to stress-test tunneling while using the optimized broadphase path.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(18)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						downwardSpeed := fixed.FromInt(18).Add(fixed.FromFraction(int64(index%7), 1))
+						sideSpeedX := fixed.FromFraction(int64((index%5)-2), 2)
+						sideSpeedZ := fixed.FromFraction(int64((index%7)-3), 2)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.Motion.Velocity = geometry.NewVector3(sideSpeedX, downwardSpeed.Neg(), sideSpeedZ)
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.Motion.Velocity = geometry.NewVector3(sideSpeedZ, downwardSpeed.Neg(), sideSpeedX)
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 2),
+								fixed.FromFraction(int64((index%7)-3), 3),
+								fixed.FromFraction(int64((index%9)-4), 4),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "High-speed scene did not exercise all collision paths.",
+				}
+			}
+			if state.SphereSphereCandidateCount >= 4950 || state.BoxBoxCandidateCount >= 4950 || state.SphereBoxCandidateCount >= 10000 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Broadphase did not reduce candidate pairs below the naive all-pairs counts.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds during the high-speed test.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor during the high-speed test.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds during the high-speed test.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor during the high-speed test.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "High-speed rigid spheres and rigid boxes stayed inside the open box without tunneling through the floor.",
+			}
+		},
+	}
+}
+
+func NewRigidSphereHighSpeedThinWallProjectileScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Sphere High Speed Thin Wall Projectile",
+		Description: "A single rigid sphere launches at very high speed into a thin wall slab to stress-test tunneling through narrow geometry.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewRigidSphereBody3D(
+				fixed.One,
+				fixed.FromFraction(1, 2),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			sphere.Restitution = fixed.FromFraction(1, 5)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+
+			return SceneState{
+				RigidSphere:    sphere,
+				GroundTriangles: makeThinWallSlabTriangles(),
+			}
+		},
+		Step: StepRigidSphereHighSpeedThinWallProjectileScene,
+		Check: func(state SceneState) ScenarioResult {
+			const wallMaxX = 1
+			const velocityLimit = 1
+
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(wallMaxX)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Projectile tunneled through the thin wall.",
+				}
+			}
+			if state.RigidSphere.Motion.Velocity.X.Cmp(fixed.FromInt(velocityLimit)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Projectile kept too much forward speed after wall impact.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "High-speed projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
 func StepSphereScene(state *SceneState) {
 	if state == nil {
 		return
@@ -3148,6 +3330,39 @@ func makeOpenBoxContainerTriangles() []geometry.Triangle {
 		geometry.NewTriangle(backB, backD, backC),
 		geometry.NewTriangle(frontA, frontC, frontB),
 		geometry.NewTriangle(frontB, frontC, frontD),
+	}
+}
+
+func makeThinWallSlabTriangles() []geometry.Triangle {
+	minX := fixed.FromFraction(-1, 4)
+	maxX := fixed.FromFraction(1, 4)
+	minY := fixed.Zero
+	maxY := fixed.FromInt(5)
+	minZ := fixed.FromInt(-4)
+	maxZ := fixed.FromInt(4)
+
+	a := geometry.NewVector3(minX, minY, minZ)
+	b := geometry.NewVector3(maxX, minY, minZ)
+	c := geometry.NewVector3(minX, maxY, minZ)
+	d := geometry.NewVector3(maxX, maxY, minZ)
+	e := geometry.NewVector3(minX, minY, maxZ)
+	f := geometry.NewVector3(maxX, minY, maxZ)
+	g := geometry.NewVector3(minX, maxY, maxZ)
+	h := geometry.NewVector3(maxX, maxY, maxZ)
+
+	return []geometry.Triangle{
+		geometry.NewTriangle(a, c, b),
+		geometry.NewTriangle(b, c, d),
+		geometry.NewTriangle(e, f, g),
+		geometry.NewTriangle(f, h, g),
+		geometry.NewTriangle(a, e, c),
+		geometry.NewTriangle(e, g, c),
+		geometry.NewTriangle(b, d, f),
+		geometry.NewTriangle(f, d, h),
+		geometry.NewTriangle(c, g, d),
+		geometry.NewTriangle(d, g, h),
+		geometry.NewTriangle(a, b, e),
+		geometry.NewTriangle(e, b, f),
 	}
 }
 

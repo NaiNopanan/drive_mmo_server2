@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"server2/internal/fixed"
 	"server2/internal/scenario"
 )
 
@@ -640,6 +641,46 @@ func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenarioIsDetermin
 			t.Fatalf("optimized scene hash mismatch: %016x != %016x", scenario.HashSceneState(first.State), scenario.HashSceneState(second.State))
 		}
 	}
+}
+
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.RigidSpheres) != 100 || len(runner.State.RigidBoxes) != 100 {
+		t.Fatalf("expected 100 rigid spheres and 100 rigid boxes at setup, got spheres=%d boxes=%d", len(runner.State.RigidSpheres), len(runner.State.RigidBoxes))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected optimized high-speed dense scene to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if runner.State.SphereSphereCandidateCount >= 4950 || runner.State.BoxBoxCandidateCount >= 4950 || runner.State.SphereBoxCandidateCount >= 10000 {
+		t.Fatalf("expected optimized high-speed scene to reduce candidate counts, got ss=%d bb=%d sb=%d", runner.State.SphereSphereCandidateCount, runner.State.BoxBoxCandidateCount, runner.State.SphereBoxCandidateCount)
+	}
+}
+
+func TestRigidSphereHighSpeedThinWallProjectileScenarioDetectsTunneling(t *testing.T) {
+	definition := scenario.NewRigidSphereHighSpeedThinWallProjectileScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Failed {
+		t.Fatalf("expected high-speed thin-wall projectile scenario to fail when tunneling is detected, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if runner.LastResult.Message != "Projectile tunneled through the thin wall." {
+		t.Fatalf("expected tunneling message, got %q", runner.LastResult.Message)
+	}
+	if runner.State.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		return
+	}
+	t.Fatalf("expected projectile to end beyond the thin wall exit, got x=%v", runner.State.RigidSphere.Motion.Position.X)
 }
 
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
