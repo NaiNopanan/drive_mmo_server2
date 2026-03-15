@@ -24,6 +24,9 @@ func (v *Vehicle) queryWheelGround(i int, g GroundQuery) {
 		Add(v.Tuning.SuspensionMaxRaise).Add(v.Tuning.WheelRadius)
 
 	hit := g.Raycast(rayOrigin, vecDown, rayLen)
+	if !hit.Hit {
+		hit = stickyGroundHit(rayOrigin, rayLen, w, g)
+	}
 
 	if !hit.Hit {
 		w.InContact = false
@@ -43,9 +46,72 @@ func (v *Vehicle) queryWheelGround(i int, g GroundQuery) {
 	distFromAnchor := hit.Distance.Sub(v.Tuning.SuspensionMaxRaise)
 	// compression = rest - (distFromAnchor - radius)
 	compression := v.Tuning.SuspensionRestLength.Sub(distFromAnchor.Sub(v.Tuning.WheelRadius))
-	
+
 	maxComp := v.Tuning.SuspensionMaxDrop.Add(v.Tuning.SuspensionMaxRaise)
 	w.Compression = fixed.Clamp(compression, fixed.Zero, maxComp)
+}
+
+func stickyGroundHit(rayOrigin geom.Vec3, rayLen fixed.Fixed, w *WheelState, g GroundQuery) GroundHit {
+	const (
+		stickyLenNum = 3
+		stickyLenDen = 20 // 0.15m
+		stickyXZNum  = 7
+		stickyXZDen  = 20 // 0.35m
+	)
+
+	extendedLen := rayLen.Add(fixed.FromFraction(stickyLenNum, stickyLenDen))
+
+	switch gg := g.(type) {
+	case WorldGroundQuery:
+		if hit := sampleGroundAtXZ(gg.Triangles, rayOrigin.X, rayOrigin.Z, rayOrigin.Y); hit.Hit {
+			dist := rayOrigin.Y.Sub(hit.Point.Y)
+			if dist.Cmp(fixed.Zero) >= 0 && dist.Cmp(extendedLen) <= 0 {
+				return GroundHit{
+					Hit:      true,
+					Point:    hit.Point,
+					Normal:   hit.Normal,
+					Distance: dist,
+				}
+			}
+		}
+	case *WorldGroundQuery:
+		if hit := sampleGroundAtXZ(gg.Triangles, rayOrigin.X, rayOrigin.Z, rayOrigin.Y); hit.Hit {
+			dist := rayOrigin.Y.Sub(hit.Point.Y)
+			if dist.Cmp(fixed.Zero) >= 0 && dist.Cmp(extendedLen) <= 0 {
+				return GroundHit{
+					Hit:      true,
+					Point:    hit.Point,
+					Normal:   hit.Normal,
+					Distance: dist,
+				}
+			}
+		}
+	default:
+		return GroundHit{}
+	}
+
+	if !w.InContact {
+		return GroundHit{}
+	}
+
+	maxXZDrift := fixed.FromFraction(stickyXZNum, stickyXZDen)
+	dx := rayOrigin.X.Sub(w.ContactPoint.X).Abs()
+	dz := rayOrigin.Z.Sub(w.ContactPoint.Z).Abs()
+	dist := rayOrigin.Y.Sub(w.ContactPoint.Y)
+
+	if dx.Cmp(maxXZDrift) > 0 || dz.Cmp(maxXZDrift) > 0 {
+		return GroundHit{}
+	}
+	if dist.Cmp(fixed.Zero) < 0 || dist.Cmp(extendedLen) > 0 {
+		return GroundHit{}
+	}
+
+	return GroundHit{
+		Hit:      true,
+		Point:    geom.V3(rayOrigin.X, w.ContactPoint.Y, rayOrigin.Z),
+		Normal:   w.ContactNormal,
+		Distance: dist,
+	}
 }
 
 func (v *Vehicle) computeWheelSuspensionForce(i int, dt fixed.Fixed) {
@@ -55,7 +121,7 @@ func (v *Vehicle) computeWheelSuspensionForce(i int, dt fixed.Fixed) {
 	}
 
 	w.SpringForce = w.Compression.Mul(v.Tuning.SuspensionStiffness)
-	
+
 	compVel := w.Compression.Sub(w.PrevCompression).Div(dt)
 	w.DamperForce = compVel.Mul(v.Tuning.SuspensionDamping)
 

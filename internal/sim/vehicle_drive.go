@@ -171,7 +171,10 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 		totalLong = totalLong.Add(holdForce)
 	}
 
-	f := w.ContactNormal.Scale(w.SuspensionForce).
+	// Use the same smoothed plane normal for suspension as traction so
+	// tessellated ramps do not kick the chassis upward on every triangle seam.
+	suspensionNormal := v.blendedTractionNormal(w.ContactNormal)
+	f := suspensionNormal.Scale(w.SuspensionForce).
 		Add(fwd.Scale(totalLong)).
 		Add(right.Scale(w.LateralForce))
 

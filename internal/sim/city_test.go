@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"testing"
 
 	"server2/internal/fixed"
@@ -10,20 +11,20 @@ import (
 func TestBuildCurvedOverpassCity_DeterministicCounts(t *testing.T) {
 	city := BuildCurvedOverpassCity()
 
-	if got := len(city.Ground.Triangles); got != 28 {
-		t.Fatalf("ground triangle count mismatch: got=%d want=28", got)
+	if got := len(city.Ground.Triangles); got != 48 {
+		t.Fatalf("ground triangle count mismatch: got=%d want=48", got)
 	}
-	if got := len(city.RoadSurfaces); got != 36 {
-		t.Fatalf("road surface count mismatch: got=%d want=36", got)
+	if got := len(city.RoadSurfaces); got != 56 {
+		t.Fatalf("road surface count mismatch: got=%d want=56", got)
 	}
 	if got := len(city.Buildings); got != 10 {
 		t.Fatalf("building count mismatch: got=%d want=10", got)
 	}
-	if got := len(city.GuardRails); got != 8 {
-		t.Fatalf("guard rail count mismatch: got=%d want=8", got)
+	if got := len(city.GuardRails); got != 18 {
+		t.Fatalf("guard rail count mismatch: got=%d want=18", got)
 	}
-	if got := len(city.Obstacles); got != 18 {
-		t.Fatalf("obstacle count mismatch: got=%d want=18", got)
+	if got := len(city.Obstacles); got != 28 {
+		t.Fatalf("obstacle count mismatch: got=%d want=28", got)
 	}
 	if got := len(city.LanePaths); got != 6 {
 		t.Fatalf("lane path count mismatch: got=%d want=6", got)
@@ -182,6 +183,70 @@ func TestCityWorld_DrivingUnderBridgeStaysOnLowerRoad(t *testing.T) {
 	}
 }
 
+func TestCityWorld_OverpassClimbDoesNotBounceBurst(t *testing.T) {
+	world := NewCityWorld()
+	world.Vehicle.Position = geom.V3(fixed.FromInt(-18), fixed.FromInt(3), fixed.FromInt(-10))
+	world.Vehicle.Yaw = fixedFromFloat(math.Pi / 4)
+	world.Vehicle.UpdateBasisFromYaw()
+
+	dt := fixed.FromFraction(1, 60)
+	for i := 0; i < 180; i++ {
+		world.Vehicle.Input = VehicleInput{}
+		world.Step(dt)
+	}
+
+	prevVy := world.Vehicle.Velocity.Y
+	significantFlipCount := 0
+	maxRise := world.Vehicle.Position.Y
+
+	for i := 0; i < 180; i++ {
+		world.Vehicle.Input = VehicleInput{Throttle: fixed.FromFraction(3, 5)}
+		world.Step(dt)
+
+		if world.Vehicle.Position.Y.Cmp(maxRise) > 0 {
+			maxRise = world.Vehicle.Position.Y
+		}
+
+		if prevVy.Abs().Cmp(fixed.FromFraction(2, 10)) > 0 &&
+			world.Vehicle.Velocity.Y.Abs().Cmp(fixed.FromFraction(2, 10)) > 0 {
+			if (prevVy.Cmp(fixed.Zero) > 0 && world.Vehicle.Velocity.Y.Cmp(fixed.Zero) < 0) ||
+				(prevVy.Cmp(fixed.Zero) < 0 && world.Vehicle.Velocity.Y.Cmp(fixed.Zero) > 0) {
+				significantFlipCount++
+			}
+		}
+		prevVy = world.Vehicle.Velocity.Y
+	}
+
+	if maxRise.Sub(fixed.FromInt(3)).Cmp(fixed.FromInt(2)) < 0 {
+		t.Fatalf("vehicle did not climb enough on overpass ramp: maxRise=%v", maxRise)
+	}
+	if significantFlipCount > 10 {
+		t.Fatalf("excessive vertical bounce burst while climbing city overpass: flips=%d expected<=10", significantFlipCount)
+	}
+}
+
+func TestStickyGroundHit_ReusesRecentTriangleContact(t *testing.T) {
+	wheel := &WheelState{
+		InContact:     true,
+		ContactPoint:  geom.V3(fixed.Zero, fixed.Zero, fixed.Zero),
+		ContactNormal: geom.V3(fixed.Zero, fixed.One, fixed.Zero),
+	}
+
+	hit := stickyGroundHit(
+		geom.V3(fixed.FromFraction(1, 10), fixed.FromInt(1), fixed.FromFraction(1, 10)),
+		fixed.FromFraction(9, 10),
+		wheel,
+		WorldGroundQuery{},
+	)
+
+	if !hit.Hit {
+		t.Fatalf("expected sticky contact fallback to preserve recent world-ground hit")
+	}
+	if hit.Point.Y != fixed.Zero {
+		t.Fatalf("sticky hit Y mismatch: got=%v want=0", hit.Point.Y)
+	}
+}
+
 func downDir() geom.Vec3 {
 	return geom.V3(fixed.Zero, fixed.One.Neg(), fixed.Zero)
 }
@@ -238,4 +303,9 @@ func assertVehicleInsideBounds(t *testing.T, v Vehicle, bounds WallBounds) {
 	if v.Position.Z.Cmp(bounds.MaxZ.Sub(halfLen)) > 0 {
 		t.Fatalf("vehicle escaped maxZ bound: pos=%v max=%v", v.Position.Z, bounds.MaxZ.Sub(halfLen))
 	}
+}
+
+func fixedFromFloat(v float64) fixed.Fixed {
+	const scale = 1_000_000
+	return fixed.FromFraction(int64(math.Round(v*scale)), scale)
 }
