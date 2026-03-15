@@ -354,6 +354,114 @@ func TestTwoSphereDifferentMassCollisionScenarioShowsDifferentOutcome(t *testing
 	}
 }
 
+func TestSphereBoxCollisionScenarioTransfersMomentum(t *testing.T) {
+	definition := scenario.NewSphereBoxCollisionScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected sphere-box collision scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected sphere and box to collide")
+	}
+}
+
+func TestTwoSphereBoxOpposingMassScenarioMovesTowardHeavierSide(t *testing.T) {
+	definition := scenario.NewTwoSphereBoxOpposingMassScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if len(runner.State.Spheres) != 2 {
+		t.Fatalf("expected 2 spheres at setup, got %d", len(runner.State.Spheres))
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected two-sphere box opposing-mass scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected spheres and box to collide")
+	}
+
+	if runner.State.Box.Motion.Position.X.Cmp(0) <= 0 {
+		t.Fatalf("expected box to move toward positive X, got position=%v", runner.State.Box.Motion.Position)
+	}
+}
+
+func TestBoxFrictionFlatSlideScenarioSlowsToRest(t *testing.T) {
+	definition := scenario.NewBoxFrictionFlatSlideScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected box friction scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.Box.Grounded {
+		t.Fatalf("expected box to be grounded at the end")
+	}
+}
+
+func TestSphereBoxFrictionCollisionScenarioSlidesAndSlows(t *testing.T) {
+	definition := scenario.NewSphereBoxFrictionCollisionScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected sphere-box friction scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected sphere to collide with friction box")
+	}
+	if !runner.State.Box.Grounded {
+		t.Fatalf("expected friction box to stay grounded")
+	}
+	if runner.State.Box.Motion.Position.X.Cmp(0) <= 0 {
+		t.Fatalf("expected friction box to move forward, got position=%v", runner.State.Box.Motion.Position)
+	}
+}
+
+func TestSphereBoxFrictionBounceCollisionScenarioBouncesAndSlides(t *testing.T) {
+	definition := scenario.NewSphereBoxFrictionBounceCollisionScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected sphere-box friction bounce scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected bouncing sphere to collide with bouncing box")
+	}
+	if runner.State.Box.Motion.Position.X.Cmp(0) <= 0 {
+		t.Fatalf("expected bouncing box to move forward, got position=%v", runner.State.Box.Motion.Position)
+	}
+	if runner.State.RigidSphere.Motion.Velocity.X.Cmp(0) >= 0 {
+		t.Fatalf("expected rigid sphere to rebound backward, got velocity=%v", runner.State.RigidSphere.Motion.Velocity)
+	}
+	if runner.State.RigidSphere.AngularVelocity.LengthSquared().Cmp(0) <= 0 {
+		t.Fatalf("expected rigid sphere to gain spin, got angular velocity=%v", runner.State.RigidSphere.AngularVelocity)
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

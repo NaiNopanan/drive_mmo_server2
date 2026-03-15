@@ -23,6 +23,11 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewNineRigidSphere3DSmallSlopeScenario(),
 		NewTwoSphereCollisionScenario(),
 		NewTwoSphereDifferentMassCollisionScenario(),
+		NewSphereBoxCollisionScenario(),
+		NewTwoSphereBoxOpposingMassScenario(),
+		NewBoxFrictionFlatSlideScenario(),
+		NewSphereBoxFrictionCollisionScenario(),
+		NewSphereBoxFrictionBounceCollisionScenario(),
 	}
 }
 
@@ -1052,6 +1057,327 @@ func NewTwoSphereDifferentMassCollisionScenario() ScenarioDefinition {
 	}
 }
 
+func NewSphereBoxCollisionScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Sphere Box Collision",
+		Description: "A sphere collides with a same-size box in midair, transferring momentum between different object types.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewDynamicSphereBody(
+				fixed.One,
+				fixed.One,
+				geometry.NewVector3(fixed.FromInt(-6), fixed.FromInt(6), fixed.Zero),
+			)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(4), fixed.Zero, fixed.Zero)
+
+			box := physics.NewDynamicBoxBody(
+				fixed.FromInt(2),
+				geometry.NewVector3(fixed.One, fixed.One, fixed.One),
+				geometry.NewVector3(fixed.FromInt(2), fixed.FromInt(6), fixed.Zero),
+			)
+
+			return SceneState{
+				Sphere: sphere,
+				Box:    box,
+			}
+		},
+		Step: StepSphereBoxCollisionScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.SphereBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The sphere and box never collided.",
+				}
+			}
+			if state.Box.Motion.Velocity.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not gain rightward velocity after the collision.",
+				}
+			}
+			if state.Sphere.Motion.Velocity.X.Cmp(fixed.Zero) >= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The sphere did not lose enough rightward velocity after hitting the box.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "A sphere hit the box and transferred momentum across object types.",
+			}
+		},
+	}
+}
+
+func NewTwoSphereBoxOpposingMassScenario() ScenarioDefinition {
+	const scenarioTicks = 180
+
+	return ScenarioDefinition{
+		Name:        "Two Sphere Box Opposing Mass",
+		Description: "Two same-size spheres hit one box from opposite sides with different masses, so the box should drift toward the heavier sphere's push.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := []physics.SphereBody{
+				physics.NewDynamicSphereBody(
+					fixed.FromInt(3),
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(-6), fixed.FromInt(6), fixed.Zero),
+				),
+				physics.NewDynamicSphereBody(
+					fixed.One,
+					fixed.One,
+					geometry.NewVector3(fixed.FromInt(6), fixed.FromInt(6), fixed.Zero),
+				),
+			}
+			spheres[0].Motion.Velocity = geometry.NewVector3(fixed.FromInt(4), fixed.Zero, fixed.Zero)
+			spheres[1].Motion.Velocity = geometry.NewVector3(fixed.FromInt(-4), fixed.Zero, fixed.Zero)
+
+			box := physics.NewDynamicBoxBody(
+				fixed.FromInt(2),
+				geometry.NewVector3(fixed.One, fixed.One, fixed.One),
+				geometry.NewVector3(fixed.Zero, fixed.FromInt(6), fixed.Zero),
+			)
+
+			return SceneState{
+				Spheres: spheres,
+				Box:     box,
+			}
+		},
+		Step: StepTwoSphereBoxOpposingMassScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.Spheres) != 2 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly two spheres in the scene.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The spheres never reached the box.",
+				}
+			}
+			if state.Box.Motion.Velocity.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not drift toward the heavier sphere's push direction.",
+				}
+			}
+			if state.Box.Motion.Position.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not end up displaced toward the heavier sphere.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Two different-mass spheres pushed the box from opposite sides and the heavier side won.",
+			}
+		},
+	}
+}
+
+func NewBoxFrictionFlatSlideScenario() ScenarioDefinition {
+	const scenarioTicks = 240
+
+	return ScenarioDefinition{
+		Name:        "Box Friction Flat Slide",
+		Description: "A box lands on a flat floor with horizontal speed and should slow down under contact friction until nearly at rest.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			box := physics.NewDynamicBoxBody(
+				fixed.One,
+				geometry.NewVector3(fixed.One, fixed.One, fixed.One),
+				geometry.NewVector3(fixed.Zero, fixed.FromInt(4), fixed.Zero),
+			)
+			box.Friction = fixed.FromFraction(1, 8)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(6), fixed.Zero, fixed.Zero)
+
+			return SceneState{
+				Box: box,
+				GroundBoxes: []geometry.AxisAlignedBoundingBox{
+					makeFlatStripBox(fixed.FromInt(-40), fixed.FromInt(40)),
+				},
+			}
+		},
+		Step: StepBoxFrictionFlatSlideScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.Box.Grounded {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box was not grounded on the floor at the end of the friction scene.",
+				}
+			}
+			if state.Box.Motion.Position.X.Cmp(fixed.FromInt(2)) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not slide forward before friction slowed it down.",
+				}
+			}
+			if state.Box.Motion.Velocity.X.Abs().Cmp(fixed.FromFraction(1, 10)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box still had too much horizontal speed after friction.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "The box slid forward and slowed to near rest because of floor friction.",
+			}
+		},
+	}
+}
+
+func NewSphereBoxFrictionCollisionScenario() ScenarioDefinition {
+	const scenarioTicks = 240
+
+	return ScenarioDefinition{
+		Name:        "Sphere Box Friction Collision",
+		Description: "A sphere hits a grounded box on a flat floor, and the box should slide forward before floor friction slows it to near rest.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewDynamicSphereBody(
+				fixed.FromInt(2),
+				fixed.One,
+				geometry.NewVector3(fixed.FromInt(-8), fixed.One, fixed.Zero),
+			)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(10), fixed.Zero, fixed.Zero)
+
+			box := physics.NewDynamicBoxBody(
+				fixed.FromInt(2),
+				geometry.NewVector3(fixed.One, fixed.One, fixed.One),
+				geometry.NewVector3(fixed.Zero, fixed.One, fixed.Zero),
+			)
+			box.Friction = fixed.FromFraction(1, 8)
+
+			return SceneState{
+				Sphere: sphere,
+				Box:    box,
+				GroundBoxes: []geometry.AxisAlignedBoundingBox{
+					makeFlatStripBox(fixed.FromInt(-40), fixed.FromInt(40)),
+				},
+			}
+		},
+		Step: StepSphereBoxFrictionCollisionScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.SphereBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The sphere never collided with the friction box.",
+				}
+			}
+			if !state.Box.Grounded {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box was not grounded on the floor at the end of the friction collision scene.",
+				}
+			}
+			if state.Box.Motion.Position.X.Cmp(fixed.FromFraction(1, 2)) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not slide forward after the sphere hit it.",
+				}
+			}
+			if state.Box.Motion.Velocity.X.Abs().Cmp(fixed.FromFraction(1, 10)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box still had too much horizontal speed after friction acted on the collision.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "The sphere pushed the box forward and floor friction slowed the box to near rest.",
+			}
+		},
+	}
+}
+
+func NewSphereBoxFrictionBounceCollisionScenario() ScenarioDefinition {
+	const scenarioTicks = 240
+
+	return ScenarioDefinition{
+		Name:        "Sphere Box Friction Bounce Collision",
+		Description: "A bouncing sphere hits a bouncing box on a flat floor, and the box should slide forward while both objects keep some rebound.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewRigidSphereBody3D(
+				fixed.FromInt(3),
+				fixed.One,
+				geometry.NewVector3(fixed.FromInt(-8), fixed.One, fixed.Zero),
+			)
+			sphere.Restitution = fixed.FromFraction(3, 5)
+			sphere.Friction = fixed.FromFraction(1, 5)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(10), fixed.Zero, fixed.FromFraction(3, 2))
+
+			box := physics.NewDynamicBoxBody(
+				fixed.FromInt(10),
+				geometry.NewVector3(fixed.One, fixed.One, fixed.One),
+				geometry.NewVector3(fixed.Zero, fixed.One, fixed.Zero),
+			)
+			box.Restitution = fixed.FromFraction(2, 5)
+			box.Friction = fixed.FromFraction(1, 8)
+
+			return SceneState{
+				RigidSphere: sphere,
+				Box:         box,
+				GroundBoxes: []geometry.AxisAlignedBoundingBox{
+					makeFlatStripBox(fixed.FromInt(-40), fixed.FromInt(40)),
+				},
+			}
+		},
+		Step: StepSphereBoxFrictionBounceCollisionScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.SphereBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The bouncing sphere never collided with the bouncing box.",
+				}
+			}
+			if !state.Box.Grounded {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The bouncing box was not grounded at the end of the scene.",
+				}
+			}
+			if state.Box.Motion.Position.X.Cmp(fixed.FromFraction(1, 4)) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not slide forward after the collision.",
+				}
+			}
+			if state.Box.Motion.Velocity.X.Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The box did not keep any forward rebound after impact.",
+				}
+			}
+			if state.RigidSphere.Motion.Velocity.X.Cmp(fixed.Zero) >= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The sphere did not rebound backward after hitting the box.",
+				}
+			}
+			if state.RigidSphere.AngularVelocity.LengthSquared().Cmp(fixed.Zero) <= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "The rigid sphere never gained visible spin from the collision.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "The rigid sphere and box both bounced on impact, and the rigid sphere picked up spin while floor friction still slowed the box.",
+			}
+		},
+	}
+}
+
 func StepSphereScene(state *SceneState) {
 	if state == nil {
 		return
@@ -1119,6 +1445,192 @@ func StepTwoSphereCollisionScene(state *SceneState) {
 	}
 
 	state.Sphere = state.Spheres[0]
+}
+
+func StepSphereBoxCollisionScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = nil
+
+	physics.StepLinearMotion(&state.Sphere.Motion, physics.DefaultTimeStep)
+	physics.StepLinearMotion(&state.Box.Motion, physics.DefaultTimeStep)
+
+	combinedFriction := state.Sphere.Friction.Add(state.Box.Friction)
+	if combinedFriction.Cmp(fixed.One) > 0 {
+		combinedFriction = fixed.One
+	}
+
+	spherePosition, sphereVelocity, boxPosition, boxVelocity, contact := physics.ResolveSphereBoxContactWithFriction(
+		state.Sphere.Motion.Position,
+		state.Sphere.Motion.Velocity,
+		state.Sphere.Motion.InverseMass,
+		state.Sphere.Radius,
+		state.Box.Motion.Position,
+		state.Box.Motion.Velocity,
+		state.Box.Motion.InverseMass,
+		state.Box.HalfExtents,
+		fixed.One,
+		combinedFriction,
+	)
+
+	if contact.Hit {
+		state.SphereBoxCollisionDetected = true
+		state.Sphere.Motion.Position = spherePosition
+		state.Sphere.Motion.Velocity = sphereVelocity
+		state.Box.Motion.Position = boxPosition
+		state.Box.Motion.Velocity = boxVelocity
+	}
+}
+
+func StepTwoSphereBoxOpposingMassScene(state *SceneState) {
+	if state == nil {
+		return
+	}
+	if len(state.Spheres) != 2 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	state.LastContacts = nil
+
+	for index := range state.Spheres {
+		physics.StepLinearMotion(&state.Spheres[index].Motion, physics.DefaultTimeStep)
+	}
+	physics.StepLinearMotion(&state.Box.Motion, physics.DefaultTimeStep)
+
+	for index := range state.Spheres {
+		spherePosition, sphereVelocity, boxPosition, boxVelocity, contact := physics.ResolveSphereBoxContact(
+			state.Spheres[index].Motion.Position,
+			state.Spheres[index].Motion.Velocity,
+			state.Spheres[index].Motion.InverseMass,
+			state.Spheres[index].Radius,
+			state.Box.Motion.Position,
+			state.Box.Motion.Velocity,
+			state.Box.Motion.InverseMass,
+			state.Box.HalfExtents,
+			fixed.One,
+		)
+
+		if contact.Hit {
+			state.SphereBoxCollisionDetected = true
+			state.Spheres[index].Motion.Position = spherePosition
+			state.Spheres[index].Motion.Velocity = sphereVelocity
+			state.Box.Motion.Position = boxPosition
+			state.Box.Motion.Velocity = boxVelocity
+		}
+	}
+
+	state.Sphere = state.Spheres[0]
+}
+
+func StepBoxFrictionFlatSlideScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	result := physics.StepBoxBodyWithGravityAndFloorOverride(
+		&state.Box,
+		physics.DefaultTimeStep,
+		physics.StandardGravity,
+		state.GroundBoxes[0],
+		state.Box.Restitution,
+	)
+	if result.HadContact {
+		state.LastContact = result.LastContact
+		state.EverTouchedGround = true
+	}
+}
+
+func StepSphereBoxFrictionCollisionScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	boxResult := physics.StepBoxBodyWithGravityAndFloorOverride(
+		&state.Box,
+		physics.DefaultTimeStep,
+		physics.StandardGravity,
+		state.GroundBoxes[0],
+		state.Box.Restitution,
+	)
+	if boxResult.HadContact {
+		state.LastContact = boxResult.LastContact
+		state.EverTouchedGround = true
+	}
+
+	physics.StepLinearMotion(&state.Sphere.Motion, physics.DefaultTimeStep)
+
+	combinedFriction := state.Sphere.Friction.Add(state.Box.Friction)
+	if combinedFriction.Cmp(fixed.One) > 0 {
+		combinedFriction = fixed.One
+	}
+
+	spherePosition, sphereVelocity, boxPosition, boxVelocity, contact := physics.ResolveSphereBoxContactWithFriction(
+		state.Sphere.Motion.Position,
+		state.Sphere.Motion.Velocity,
+		state.Sphere.Motion.InverseMass,
+		state.Sphere.Radius,
+		state.Box.Motion.Position,
+		state.Box.Motion.Velocity,
+		state.Box.Motion.InverseMass,
+		state.Box.HalfExtents,
+		fixed.Zero,
+		combinedFriction,
+	)
+
+	if contact.Hit {
+		state.SphereBoxCollisionDetected = true
+		state.Sphere.Motion.Position = spherePosition
+		state.Sphere.Motion.Velocity = sphereVelocity
+		state.Box.Motion.Position = boxPosition
+		state.Box.Motion.Velocity = boxVelocity
+	}
+}
+
+func StepSphereBoxFrictionBounceCollisionScene(state *SceneState) {
+	if state == nil || len(state.GroundBoxes) == 0 {
+		return
+	}
+
+	state.LastContact = physics.SphereTriangleContact{}
+	boxResult := physics.StepBoxBodyWithGravityAndFloorOverride(
+		&state.Box,
+		physics.DefaultTimeStep,
+		physics.StandardGravity,
+		state.GroundBoxes[0],
+		state.Box.Restitution,
+	)
+	if boxResult.HadContact {
+		state.LastContact = boxResult.LastContact
+		state.EverTouchedGround = true
+	}
+
+	physics.AdvanceRigidSphereBody3D(&state.RigidSphere, physics.DefaultTimeStep)
+
+	combinedRestitution := state.RigidSphere.Restitution.Add(state.Box.Restitution)
+	if combinedRestitution.Cmp(fixed.One) > 0 {
+		combinedRestitution = fixed.One
+	}
+	combinedFriction := state.RigidSphere.Friction.Add(state.Box.Friction)
+	if combinedFriction.Cmp(fixed.One) > 0 {
+		combinedFriction = fixed.One
+	}
+
+	contact := physics.ResolveRigidSphereBoxContactWithFriction(
+		&state.RigidSphere,
+		&state.Box,
+		combinedRestitution,
+		combinedFriction,
+	)
+
+	if contact.Hit {
+		state.SphereBoxCollisionDetected = true
+	}
 }
 
 func StepMultiSphereScene(state *SceneState) {

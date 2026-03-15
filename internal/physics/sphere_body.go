@@ -12,6 +12,7 @@ type SphereBody struct {
 	Motion      MotionState
 	Radius      fixed.Fixed
 	Restitution fixed.Fixed
+	Friction    fixed.Fixed
 	Grounded    bool
 }
 

@@ -10,6 +10,7 @@ type BoxBody struct {
 	Motion           MotionState
 	HalfExtents      geometry.Vector3
 	Restitution      fixed.Fixed
+	Friction         fixed.Fixed
 	Grounded         bool
 	RotationZ        fixed.Fixed
 	AngularVelocityZ fixed.Fixed
@@ -88,6 +89,35 @@ func integrateBoxRotation(body *BoxBody, dt fixed.Fixed) {
 	body.RotationZ = body.RotationZ.Add(body.AngularVelocityZ.Mul(dt))
 }
 
+func clampUnitFixed(value fixed.Fixed) fixed.Fixed {
+	if value.Cmp(fixed.Zero) < 0 {
+		return fixed.Zero
+	}
+	if value.Cmp(fixed.One) > 0 {
+		return fixed.One
+	}
+	return value
+}
+
+func applyBoxContactFriction(body *BoxBody, planeNormal geometry.Vector3) {
+	if body == nil {
+		return
+	}
+
+	friction := clampUnitFixed(body.Friction)
+	if friction == fixed.Zero {
+		return
+	}
+
+	tangentVelocity := body.Motion.Velocity.Sub(planeNormal.Scale(body.Motion.Velocity.Dot(planeNormal)))
+	if tangentVelocity.LengthSquared() == fixed.Zero {
+		return
+	}
+
+	body.Motion.Velocity = body.Motion.Velocity.Sub(tangentVelocity.Scale(friction))
+	body.AngularVelocityZ = body.AngularVelocityZ.Mul(fixed.One.Sub(friction))
+}
+
 // Bounds returns the current axis-aligned bounds of the box body.
 func (b BoxBody) Bounds() geometry.AxisAlignedBoundingBox {
 	return geometry.NewAxisAlignedBoundingBox(
@@ -133,6 +163,7 @@ func StepBoxBodyWithGravityAndFloorOverride(body *BoxBody, dt fixed.Fixed, gravi
 	if body.Motion.Velocity.Y.Cmp(fixed.Zero) < 0 {
 		body.Motion.Velocity.Y = body.Motion.Velocity.Y.Neg().Mul(contactRestitution)
 	}
+	applyBoxContactFriction(body, geometry.NewVector3(fixed.Zero, fixed.One, fixed.Zero))
 	body.Grounded = true
 
 	return BoxStepResult{
@@ -185,6 +216,7 @@ func StepBoxBodyWithGravityAndSideSlopeOverride(body *BoxBody, dt fixed.Fixed, g
 	if vn.Cmp(fixed.Zero) < 0 {
 		body.Motion.Velocity = body.Motion.Velocity.Sub(normal.Scale(vn.Mul(fixed.One.Add(contactRestitution))))
 	}
+	applyBoxContactFriction(body, normal)
 
 	body.Grounded = true
 
@@ -255,6 +287,7 @@ func StepOrientedBoxBodyWithGravityAndPlaneOverride(body *BoxBody, dt fixed.Fixe
 			body.AngularVelocityZ = body.AngularVelocityZ.Add(rCrossN.Mul(impulseMagnitude).Mul(body.InverseInertiaZ))
 		}
 	}
+	applyBoxContactFriction(body, planeNormal)
 
 	body.Grounded = planeNormal.Y.Cmp(fixed.Zero) > 0
 

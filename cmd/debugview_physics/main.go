@@ -89,6 +89,19 @@ func drawSphereBody(body physics.SphereBody) {
 		position.Z+fixedToFloat32(body.Motion.Velocity.Z)*0.25,
 	)
 	rl.DrawLine3D(position, velocityEnd, rl.Red)
+
+	direction := body.Motion.Velocity
+	if direction.LengthSquared() != fixed.Zero {
+		direction = direction.Normalize()
+	} else {
+		direction = geometry.NewVector3(fixed.One, fixed.Zero, fixed.Zero)
+	}
+
+	directionEnd := vector3ToRaylibVector(
+		body.Motion.Position.Add(direction.Scale(body.Radius.Mul(fixed.FromFraction(3, 2)))),
+	)
+	rl.DrawLine3D(position, directionEnd, rl.Gold)
+	rl.DrawSphere(directionEnd, 0.08, rl.Gold)
 }
 
 func drawSphereBodies(bodies []physics.SphereBody) {
@@ -346,9 +359,11 @@ func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
 		lines := []string{
 			fmt.Sprintf("Sphere %d", index+1),
 			fmt.Sprintf("m=%s r=%s", fixedToText(sphere.Motion.Mass), fixedToText(sphere.Radius)),
+			fmt.Sprintf("mu=%s", fixedToText(sphere.Friction)),
 			fmt.Sprintf("vx=%s vy=%s", fixedToText(sphere.Motion.Velocity.X), fixedToText(sphere.Motion.Velocity.Y)),
+			"spin=false",
 		}
-		if state.SphereSphereCollisionDetected {
+		if state.SphereSphereCollisionDetected || state.SphereBoxCollisionDetected {
 			lines = append(lines, "collision=true")
 		} else {
 			lines = append(lines, fmt.Sprintf("grounded=%v", sphere.Grounded))
@@ -360,7 +375,10 @@ func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
 		lines := []string{
 			fmt.Sprintf("Rigid Sphere %d", index+1),
 			fmt.Sprintf("m=%s r=%s", fixedToText(sphere.Motion.Mass), fixedToText(sphere.Radius)),
+			fmt.Sprintf("mu=%s", fixedToText(sphere.Friction)),
 			fmt.Sprintf("vx=%s vy=%s", fixedToText(sphere.Motion.Velocity.X), fixedToText(sphere.Motion.Velocity.Y)),
+			fmt.Sprintf("wx=%s wz=%s", fixedToText(sphere.AngularVelocity.X), fixedToText(sphere.AngularVelocity.Z)),
+			"spin=true",
 			fmt.Sprintf("grounded=%v", sphere.Grounded),
 		}
 		drawObjectLabel(camera, sphere.Motion.Position, lines, rl.Purple)
@@ -370,8 +388,13 @@ func drawSceneObjectLabels(camera rl.Camera3D, state scenario.SceneState) {
 		lines := []string{
 			fmt.Sprintf("Box %d", index+1),
 			fmt.Sprintf("m=%s", fixedToText(box.Motion.Mass)),
+			fmt.Sprintf("mu=%s", fixedToText(box.Friction)),
 			fmt.Sprintf("vx=%s vy=%s", fixedToText(box.Motion.Velocity.X), fixedToText(box.Motion.Velocity.Y)),
-			fmt.Sprintf("grounded=%v", box.Grounded),
+		}
+		if state.SphereBoxCollisionDetected {
+			lines = append(lines, "collision=true")
+		} else {
+			lines = append(lines, fmt.Sprintf("grounded=%v", box.Grounded))
 		}
 		drawObjectLabel(camera, box.Motion.Position, lines, rl.DarkGreen)
 	}

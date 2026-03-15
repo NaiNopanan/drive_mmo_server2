@@ -38,6 +38,7 @@ type SceneState struct {
 	EverTouchedGround             bool
 	BounceDetected                bool
 	SphereSphereCollisionDetected bool
+	SphereBoxCollisionDetected    bool
 	BounceDetectedSet             []bool
 	PeakBounceHeight              fixed.Fixed
 	PeakBounceHeights             []fixed.Fixed

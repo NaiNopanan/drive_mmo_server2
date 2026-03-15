@@ -64,6 +64,15 @@ func applyRigidSphereInverseInertia(body RigidSphereBody3D, vector geometry.Vect
 	return vector.Scale(body.InverseInertia)
 }
 
+func AdvanceRigidSphereBody3D(body *RigidSphereBody3D, dt fixed.Fixed) {
+	if body == nil {
+		return
+	}
+
+	StepLinearMotion(&body.Motion, dt)
+	integrateRigidSphereOrientation(body, dt)
+}
+
 func StepRigidSphereBody3DWithGravity(body *RigidSphereBody3D, dt fixed.Fixed, gravity geometry.Vector3, triangles []geometry.Triangle) RigidSphereStepResult {
 	if body == nil {
 		return RigidSphereStepResult{}
