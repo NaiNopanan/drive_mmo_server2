@@ -683,6 +683,25 @@ func TestRigidSphereHighSpeedThinWallProjectileScenarioDetectsTunneling(t *testi
 	t.Fatalf("expected projectile to end beyond the thin wall exit, got x=%v", runner.State.RigidSphere.Motion.Position.X)
 }
 
+func TestRigidSphereHighSpeedThinWallProjectileCCDScenarioDoesNotTunnel(t *testing.T) {
+	definition := scenario.NewRigidSphereHighSpeedThinWallProjectileCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected CCD thin-wall projectile scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverTouchedGround {
+		t.Fatalf("expected CCD projectile to touch the thin wall")
+	}
+	if runner.State.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected CCD projectile to stay before the thin wall exit, got x=%v", runner.State.RigidSphere.Motion.Position.X)
+	}
+}
+
 func TestThreeBoxSameSlopeBounceScenarioShowsDifferentBounceByBox(t *testing.T) {
 	definition := scenario.NewThreeBoxSameSlopeBounceScenario()
 	runner := scenario.NewScenarioRunner(definition)

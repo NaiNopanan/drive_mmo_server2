@@ -36,6 +36,7 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario(),
 		NewRigidSphereHighSpeedThinWallProjectileScenario(),
+		NewRigidSphereHighSpeedThinWallProjectileCCDScenario(),
 	}
 }
 
@@ -2221,6 +2222,54 @@ func NewRigidSphereHighSpeedThinWallProjectileScenario() ScenarioDefinition {
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "High-speed projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidSphereHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Sphere High Speed Thin Wall Projectile CCD",
+		Description: "The same high-speed thin-wall projectile setup as scene 28, but resolved with swept sphere CCD to prevent tunneling.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewRigidSphereBody3D(
+				fixed.One,
+				fixed.FromFraction(1, 2),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.Zero),
+			)
+			sphere.Restitution = fixed.FromFraction(1, 5)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			wall := geometry.NewAxisAlignedBoundingBox(
+				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
+				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
+			)
+
+			return SceneState{
+				RigidSphere:    sphere,
+				GroundTriangles: makeThinWallSlabTriangles(),
+				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+			}
+		},
+		Step: StepRigidSphereHighSpeedThinWallProjectileCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.EverTouchedGround {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "CCD projectile never contacted the thin wall.",
+				}
+			}
+			if state.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "CCD projectile still tunneled through the thin wall.",
+				}
+			}
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "CCD projectile stayed on the impact side of the thin wall.",
 			}
 		},
 	}
