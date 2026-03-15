@@ -83,8 +83,12 @@ func TestVehicleSteeringChangesYaw(t *testing.T) {
 
 	endYaw := w.Vehicles[0].Yaw
 
-	if endYaw.Cmp(startYaw) == 0 {
-		t.Fatalf("vehicle yaw did not change: start=%v end=%v", startYaw, endYaw)
+	if endYaw.Cmp(startYaw) <= 0 {
+		t.Fatalf("expected Yaw to increase when steering Right, got start=%v end=%v", startYaw, endYaw)
+	}
+
+	if w.Vehicles[0].Position.X.Cmp(fixed.Zero) <= 0 {
+		t.Fatalf("expected positive X position when steering Right, got %v", w.Vehicles[0].Position.X)
 	}
 }
 

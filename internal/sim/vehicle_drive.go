@@ -7,9 +7,10 @@ import (
 
 func (v *Vehicle) pointVelocityAt(p geom.Vec3) geom.Vec3 {
 	r := p.Sub(v.Position)
-	// omega = (0, YawVelocity, 0)
-	// cross(omega, r) = (YawVelocity*r.Z, 0, -YawVelocity*r.X)
-	angVel := geom.V3(v.YawVelocity.Mul(r.Z), fixed.Zero, v.YawVelocity.Mul(r.X).Neg())
+	// Omega = YawVelocity * UpWS
+	omega := v.UpWS.Scale(v.YawVelocity)
+	// velocity = v + omega x r
+	angVel := omega.Cross(r)
 	return v.Velocity.Add(angVel)
 }
 
@@ -115,6 +116,7 @@ func (v *Vehicle) computeWheelMotionForces(i int) geom.Vec3 {
 		if w.LongSpeed.Cmp(fixed.Zero) < 0 {
 			resDir = fixed.One.Neg()
 		}
+		
 		totalLong = totalLong.Sub(resDir.Mul(v.Tuning.RollingResistance))
 	}
 
