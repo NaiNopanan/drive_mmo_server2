@@ -42,6 +42,11 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario(),
 		NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario(),
 		NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario(),
+		NewRigidSphereAndBoxThinWallProjectileObjectCCDScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAllCCDScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScenario(),
 	}
 }
 
@@ -1714,8 +1719,8 @@ func NewFiftyRigidSpheresAndFiftyRigidBoxesInBoxScenario() ScenarioDefinition {
 			}
 
 			return SceneState{
-				RigidSpheres: spheres,
-				RigidBoxes:   boxes,
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
 				GroundTriangles: makeOpenBoxContainerTriangles(),
 			}
 		},
@@ -2179,6 +2184,588 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenario()
 	}
 }
 
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAllCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 420
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box All CCD",
+		Description: "One hundred rigid spheres and one hundred rigid boxes fall into an open box while every object enables CCD against the container mesh.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 4),
+								fixed.FromFraction(int64((index%7)-3), 5),
+								fixed.FromFraction(int64((index%9)-4), 6),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxAllCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "All-CCD container scene did not exercise every collision path.",
+				}
+			}
+			if state.SphereSphereCandidateCount >= 4950 || state.BoxBoxCandidateCount >= 4950 || state.SphereBoxCandidateCount >= 10000 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Broadphase did not reduce candidate pairs below the naive all-pairs counts.",
+				}
+			}
+			for _, sphere := range state.RigidSpheres {
+				if !sphere.UseCCD || sphere.CCDMode != physics.CCDModeSweepTriangleMesh {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere did not keep mesh CCD enabled.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if !box.UseCCD || box.CCDMode != physics.CCDModeSweepRotatingOrientedBoxTriangleMesh {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box did not keep rotating OBB mesh CCD enabled.",
+					}
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "All rigid spheres and rigid boxes kept CCD enabled and stayed inside the open box.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 420
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Hybrid CCD Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes use per-object sleeping and selective CCD thresholds to optimize the mixed container stress scene.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							sphere.CCDVelocityThreshold = sphere.Radius.Mul(fixed.FromInt(3))
+							sphere.SleepLinearThreshold = fixed.FromFraction(1, 4)
+							sphere.SleepAngularThreshold = fixed.FromFraction(1, 4)
+							sphere.SleepTickThreshold = 8
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.CCDVelocityThreshold = box.HalfExtents.Length().Mul(fixed.FromInt(3))
+							box.SleepLinearThreshold = fixed.FromFraction(1, 4)
+							box.SleepAngularThreshold = fixed.FromFraction(1, 4)
+							box.SleepTickThreshold = 8
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 4),
+								fixed.FromFraction(int64((index%7)-3), 5),
+								fixed.FromFraction(int64((index%9)-4), 6),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Hybrid optimized scene did not exercise every collision path.",
+				}
+			}
+			if !state.EverActivatedCCDSphere && !state.EverActivatedCCDBox {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Hybrid optimized scene never activated CCD for any object.",
+				}
+			}
+			if !state.EverSleptSphere && !state.EverSleptBox {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Hybrid optimized scene never put any object to sleep.",
+				}
+			}
+			if state.SphereSphereCandidateCount >= 4950 || state.BoxBoxCandidateCount >= 4950 || state.SphereBoxCandidateCount >= 10000 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Broadphase did not reduce candidate pairs below the naive all-pairs counts.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Hybrid object optimization kept the mixed rigid-body container scene stable while reducing expensive CCD work.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes optimize per-object CCD further with separate linear and angular box thresholds plus sleeping-pair skips.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							sphere.CCDVelocityThreshold = sphere.Radius.Mul(fixed.FromInt(4))
+							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepTickThreshold = 4
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.CCDVelocityThreshold = box.HalfExtents.Length().Mul(fixed.FromInt(5))
+							box.CCDAngularSweepThreshold = box.HalfExtents.Length().Mul(fixed.FromFraction(3, 2))
+							box.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							box.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							box.SleepTickThreshold = 4
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 2),
+								fixed.FromFraction(int64((index%7)-3), 3),
+								fixed.FromFraction(int64((index%9)-4), 4),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive optimized scene did not exercise every collision path.",
+				}
+			}
+			if !state.EverActivatedAngularRiskCCDBox {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive optimized scene never activated box CCD from angular sweep risk.",
+				}
+			}
+			if !state.EverSkippedSleepingPairs {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive optimized scene never skipped sleeping-sleeping pairs.",
+				}
+			}
+			if state.SphereSphereCandidateCount >= 4950 || state.BoxBoxCandidateCount >= 4950 || state.SphereBoxCandidateCount >= 10000 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Broadphase did not reduce candidate pairs below the naive all-pairs counts.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Adaptive object optimization used angular-risk box CCD and sleeping-pair skips while keeping the dense container scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes add a cheap precheck before expensive rotating box mesh CCD while keeping adaptive CCD and sleeping-pair skips.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							sphere.CCDVelocityThreshold = sphere.Radius.Mul(fixed.FromInt(4))
+							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepTickThreshold = 4
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.CCDVelocityThreshold = box.HalfExtents.Length().Mul(fixed.FromInt(5))
+							box.CCDAngularSweepThreshold = box.HalfExtents.Length().Mul(fixed.FromFraction(3, 2))
+							box.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							box.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							box.SleepTickThreshold = 4
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 2),
+								fixed.FromFraction(int64((index%7)-3), 3),
+								fixed.FromFraction(int64((index%9)-4), 4),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive precheck scene did not exercise every collision path.",
+				}
+			}
+			if state.BoxCCDPrecheckCount == 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive precheck scene never ran box CCD prechecks.",
+				}
+			}
+			if !state.EverRejectedBoxCCDPrecheck {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive precheck scene never rejected any expensive box CCD call.",
+				}
+			}
+			if !state.EverExecutedBoxCCDMeshSweep {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive precheck scene never executed any full box mesh sweep.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Cheap box CCD precheck reduced expensive mesh sweeps while keeping the adaptive dense scene stable.",
+			}
+		},
+	}
+}
+
 func NewRigidSphereHighSpeedThinWallProjectileScenario() ScenarioDefinition {
 	const scenarioTicks = 120
 
@@ -2194,9 +2781,11 @@ func NewRigidSphereHighSpeedThinWallProjectileScenario() ScenarioDefinition {
 			)
 			sphere.Restitution = fixed.FromFraction(1, 5)
 			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			sphere.UseCCD = false
+			sphere.CCDMode = physics.CCDModeDiscrete
 
 			return SceneState{
-				RigidSphere:    sphere,
+				RigidSphere:     sphere,
 				GroundTriangles: makeThinWallSlabTriangles(),
 			}
 		},
@@ -2247,15 +2836,17 @@ func NewRigidSphereHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
 			)
 			sphere.Restitution = fixed.FromFraction(1, 5)
 			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			sphere.UseCCD = true
+			sphere.CCDMode = physics.CCDModeSweepAxisAlignedBoundingBox
 			wall := geometry.NewAxisAlignedBoundingBox(
 				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
 				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
 			)
 
 			return SceneState{
-				RigidSphere:    sphere,
+				RigidSphere:     sphere,
 				GroundTriangles: makeThinWallSlabTriangles(),
-				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+				GroundBoxes:     []geometry.AxisAlignedBoundingBox{wall},
 			}
 		},
 		Step: StepRigidSphereHighSpeedThinWallProjectileCCDScene,
@@ -2295,9 +2886,11 @@ func NewRigidSphereHighSpeedThinWallProjectileMeshCCDScenario() ScenarioDefiniti
 			)
 			sphere.Restitution = fixed.FromFraction(1, 5)
 			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			sphere.UseCCD = true
+			sphere.CCDMode = physics.CCDModeSweepTriangleMesh
 
 			return SceneState{
-				RigidSphere:    sphere,
+				RigidSphere:     sphere,
 				GroundTriangles: makeThinWallSlabTriangles(),
 			}
 		},
@@ -2338,15 +2931,17 @@ func NewRigidBoxHighSpeedThinWallProjectileCCDScenario() ScenarioDefinition {
 			)
 			box.Restitution = fixed.FromFraction(1, 5)
 			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.UseCCD = true
+			box.CCDMode = physics.CCDModeSweepAxisAlignedBoundingBox
 			wall := geometry.NewAxisAlignedBoundingBox(
 				geometry.NewVector3(fixed.FromFraction(-1, 4), fixed.Zero, fixed.FromInt(-4)),
 				geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromInt(5), fixed.FromInt(4)),
 			)
 
 			return SceneState{
-				RigidBox:       box,
+				RigidBox:        box,
 				GroundTriangles: makeThinWallSlabTriangles(),
-				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+				GroundBoxes:     []geometry.AxisAlignedBoundingBox{wall},
 			}
 		},
 		Step: StepRigidBoxHighSpeedThinWallProjectileCCDScene,
@@ -2386,6 +2981,8 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario() ScenarioDefinit
 			)
 			box.Restitution = fixed.FromFraction(1, 5)
 			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.UseCCD = true
+			box.CCDMode = physics.CCDModeSweepAxisAlignedBoundingBox
 			box.Orientation = physics.NewQuaternionFromEulerXYZ(
 				fixed.FromFraction(1, 5),
 				fixed.FromFraction(3, 20),
@@ -2402,9 +2999,9 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileCCDScenario() ScenarioDefinit
 			)
 
 			return SceneState{
-				RigidBox:       box,
+				RigidBox:        box,
 				GroundTriangles: makeThinWallSlabTriangles(),
-				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+				GroundBoxes:     []geometry.AxisAlignedBoundingBox{wall},
 			}
 		},
 		Step: StepRigidBoxRotatingHighSpeedThinWallProjectileCCDScene,
@@ -2450,6 +3047,8 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario() ScenarioDefi
 			)
 			box.Restitution = fixed.FromFraction(1, 5)
 			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.UseCCD = true
+			box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxAxisAlignedBoundingBox
 			box.Orientation = physics.NewQuaternionFromEulerXYZ(
 				fixed.FromFraction(1, 5),
 				fixed.FromFraction(3, 20),
@@ -2466,9 +3065,9 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScenario() ScenarioDefi
 			)
 
 			return SceneState{
-				RigidBox:       box,
+				RigidBox:        box,
 				GroundTriangles: makeThinWallSlabTriangles(),
-				GroundBoxes:    []geometry.AxisAlignedBoundingBox{wall},
+				GroundBoxes:     []geometry.AxisAlignedBoundingBox{wall},
 			}
 		},
 		Step: StepRigidBoxRotatingHighSpeedThinWallProjectileOBBCCDScene,
@@ -2514,6 +3113,8 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario() Scenario
 			)
 			box.Restitution = fixed.FromFraction(1, 5)
 			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.UseCCD = true
+			box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
 			box.Orientation = physics.NewQuaternionFromEulerXYZ(
 				fixed.FromFraction(1, 5),
 				fixed.FromFraction(3, 20),
@@ -2526,7 +3127,7 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario() Scenario
 			)
 
 			return SceneState{
-				RigidBox:       box,
+				RigidBox:        box,
 				GroundTriangles: makeThinWallSlabTriangles(),
 			}
 		},
@@ -2553,6 +3154,103 @@ func NewRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenario() Scenario
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "Rotating OBB mesh CCD box projectile stayed on the impact side of the thin wall.",
+			}
+		},
+	}
+}
+
+func NewRigidSphereAndBoxThinWallProjectileObjectCCDScenario() ScenarioDefinition {
+	const scenarioTicks = 120
+
+	return ScenarioDefinition{
+		Name:        "Rigid Sphere And Box Object CCD Thin Wall",
+		Description: "A rigid sphere and a rotating rigid box both use their own UseCCD and CCDMode settings while hitting the same thin wall at high speed.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			sphere := physics.NewRigidSphereBody3D(
+				fixed.One,
+				fixed.FromFraction(1, 2),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(3), fixed.FromInt(-2)),
+			)
+			sphere.Restitution = fixed.FromFraction(1, 5)
+			sphere.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			sphere.UseCCD = true
+			sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+
+			box := physics.NewRigidBoxBody3D(
+				fixed.One,
+				geometry.NewVector3(fixed.FromFraction(1, 2), fixed.FromFraction(1, 2), fixed.FromFraction(1, 2)),
+				geometry.NewVector3(fixed.FromInt(-12), fixed.FromInt(2), fixed.FromInt(2)),
+			)
+			box.Restitution = fixed.FromFraction(1, 5)
+			box.Motion.Velocity = geometry.NewVector3(fixed.FromInt(80), fixed.Zero, fixed.Zero)
+			box.UseCCD = true
+			box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+			box.Orientation = physics.NewQuaternionFromEulerXYZ(
+				fixed.FromFraction(1, 6),
+				fixed.FromFraction(1, 7),
+				fixed.FromFraction(1, 5),
+			)
+			box.AngularVelocity = geometry.NewVector3(
+				fixed.FromInt(5),
+				fixed.FromInt(4),
+				fixed.FromInt(3),
+			)
+
+			return SceneState{
+				RigidSphere:     sphere,
+				RigidBox:        box,
+				GroundTriangles: makeThinWallSlabTriangles(),
+			}
+		},
+		Step: StepRigidSphereAndBoxThinWallProjectileObjectCCDScene,
+		Check: func(state SceneState) ScenarioResult {
+			if !state.RigidSphereCCDHitDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid sphere never reported a CCD wall hit.",
+				}
+			}
+			if !state.RigidBoxCCDHitDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid box never reported a CCD wall hit.",
+				}
+			}
+			if state.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid sphere tunneled through the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid box tunneled through the thin wall.",
+				}
+			}
+			if state.RigidBox.Motion.Velocity.X.Cmp(fixed.Zero) >= 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid box did not bounce back from the thin wall.",
+				}
+			}
+			if !state.RigidSphere.UseCCD || state.RigidSphere.CCDMode != physics.CCDModeSweepTriangleMesh {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid sphere did not keep its configured CCD mode.",
+				}
+			}
+			if !state.RigidBox.UseCCD || state.RigidBox.CCDMode != physics.CCDModeSweepRotatingOrientedBoxTriangleMesh {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Rigid box did not keep its configured CCD mode.",
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Rigid sphere and rigid box both respected their object CCD settings, bounced, and stayed on the impact side of the wall.",
 			}
 		},
 	}

@@ -38,6 +38,30 @@ func fixedToText(value fixed.Fixed) string {
 	return value.String()
 }
 
+func optimizedScenarioDefinitions() []scenario.ScenarioDefinition {
+	definitions := scenario.DefaultScenarioDefinitions()
+	targetNames := []string{
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box All CCD",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Hybrid CCD Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Optimized",
+	}
+
+	ordered := make([]scenario.ScenarioDefinition, 0, len(targetNames))
+	for _, targetName := range targetNames {
+		for _, definition := range definitions {
+			if definition.Name == targetName {
+				ordered = append(ordered, definition)
+				break
+			}
+		}
+	}
+	if len(ordered) > 0 {
+		return ordered
+	}
+	return definitions
+}
+
 func ccdLabel(useCCD bool, mode physics.CCDMode) string {
 	if !useCCD {
 		return "off"
@@ -810,12 +834,12 @@ func main() {
 	const screenWidth = 1400
 	const screenHeight = 900
 
-	rl.InitWindow(screenWidth, screenHeight, "server2 Physics Debug View")
+	rl.InitWindow(screenWidth, screenHeight, "server2 Physics Optimized Debug View")
 	defer rl.CloseWindow()
 
 	rl.SetTargetFPS(int32(physics.DefaultStepRateHz))
 
-	definitions := scenario.DefaultScenarioDefinitions()
+	definitions := optimizedScenarioDefinitions()
 	currentIndex := 0
 	runner := scenario.NewScenarioRunner(definitions[currentIndex])
 	paused := false

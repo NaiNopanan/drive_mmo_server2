@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"server2/internal/fixed"
+	"server2/internal/physics"
 	"server2/internal/scenario"
 )
 
@@ -663,6 +664,105 @@ func TestHundredRigidSpheresAndHundredRigidBoxesInBoxOptimizedHighSpeedScenarioS
 	}
 }
 
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxAllCCDScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxAllCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for _, sphere := range runner.State.RigidSpheres {
+		if !sphere.UseCCD || sphere.CCDMode != physics.CCDModeSweepTriangleMesh {
+			t.Fatalf("expected every rigid sphere to start with mesh CCD enabled")
+		}
+	}
+	for _, box := range runner.State.RigidBoxes {
+		if !box.UseCCD || box.CCDMode != physics.CCDModeSweepRotatingOrientedBoxTriangleMesh {
+			t.Fatalf("expected every rigid box to start with rotating OBB mesh CCD enabled")
+		}
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected all-CCD mixed rigid container scene to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.SphereBoxCollisionDetected {
+		t.Fatalf("expected spheres and boxes to collide in all-CCD scene")
+	}
+	if !runner.State.RigidSphereSphereCollisionDetected {
+		t.Fatalf("expected rigid spheres to collide in all-CCD scene")
+	}
+	if !runner.State.RigidBoxBoxCollisionDetected {
+		t.Fatalf("expected rigid boxes to collide in all-CCD scene")
+	}
+}
+
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected hybrid CCD optimized scene to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverActivatedCCDSphere && !runner.State.EverActivatedCCDBox {
+		t.Fatalf("expected hybrid scene to activate CCD for some objects")
+	}
+	if !runner.State.EverSleptSphere && !runner.State.EverSleptBox {
+		t.Fatalf("expected hybrid scene to put some objects to sleep")
+	}
+	if !runner.State.SphereBoxCollisionDetected || !runner.State.RigidSphereSphereCollisionDetected || !runner.State.RigidBoxBoxCollisionDetected {
+		t.Fatalf("expected hybrid scene to exercise all collision paths")
+	}
+}
+
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected adaptive CCD optimized scene to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.EverActivatedAngularRiskCCDBox {
+		t.Fatalf("expected adaptive scene to activate box CCD from angular sweep risk")
+	}
+	if !runner.State.EverSkippedSleepingPairs {
+		t.Fatalf("expected adaptive scene to skip sleeping-sleeping pairs")
+	}
+	if runner.State.SleepingSphereSphereSkipCount == 0 && runner.State.SleepingBoxBoxSkipCount == 0 && runner.State.SleepingSphereBoxSkipCount == 0 {
+		t.Fatalf("expected adaptive scene to record sleeping pair skips")
+	}
+}
+
+func TestHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScenarioStaysContained(t *testing.T) {
+	definition := scenario.NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected adaptive precheck optimized scene to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if runner.State.BoxCCDPrecheckCount == 0 {
+		t.Fatalf("expected adaptive precheck scene to run box CCD prechecks")
+	}
+	if !runner.State.EverRejectedBoxCCDPrecheck {
+		t.Fatalf("expected adaptive precheck scene to reject some box CCD calls before full mesh sweep")
+	}
+	if !runner.State.EverExecutedBoxCCDMeshSweep {
+		t.Fatalf("expected adaptive precheck scene to still execute some full box mesh sweeps")
+	}
+}
+
 func TestRigidSphereHighSpeedThinWallProjectileScenarioDetectsTunneling(t *testing.T) {
 	definition := scenario.NewRigidSphereHighSpeedThinWallProjectileScenario()
 	runner := scenario.NewScenarioRunner(definition)
@@ -803,6 +903,41 @@ func TestRigidBoxRotatingHighSpeedThinWallProjectileOBBMeshCCDScenarioDoesNotTun
 	}
 	if runner.State.RigidBox.AngularVelocity.LengthSquared() == fixed.Zero {
 		t.Fatalf("expected rotating OBB mesh CCD box projectile to retain angular velocity")
+	}
+}
+
+func TestRigidSphereAndBoxThinWallProjectileObjectCCDScenarioUsesObjectCCDSettings(t *testing.T) {
+	definition := scenario.NewRigidSphereAndBoxThinWallProjectileObjectCCDScenario()
+	runner := scenario.NewScenarioRunner(definition)
+
+	if !runner.State.RigidSphere.UseCCD || runner.State.RigidSphere.CCDMode != physics.CCDModeSweepTriangleMesh {
+		t.Fatalf("expected rigid sphere to start with mesh CCD, got use=%v mode=%v", runner.State.RigidSphere.UseCCD, runner.State.RigidSphere.CCDMode)
+	}
+	if !runner.State.RigidBox.UseCCD || runner.State.RigidBox.CCDMode != physics.CCDModeSweepRotatingOrientedBoxTriangleMesh {
+		t.Fatalf("expected rigid box to start with rotating OBB mesh CCD, got use=%v mode=%v", runner.State.RigidBox.UseCCD, runner.State.RigidBox.CCDMode)
+	}
+
+	for !runner.Finished {
+		runner.Step()
+	}
+
+	if runner.LastResult.Status != scenario.Passed {
+		t.Fatalf("expected mixed object CCD thin-wall scenario to pass, got status=%v message=%q", runner.LastResult.Status, runner.LastResult.Message)
+	}
+	if !runner.State.RigidSphereCCDHitDetected {
+		t.Fatalf("expected rigid sphere to register a CCD wall hit")
+	}
+	if !runner.State.RigidBoxCCDHitDetected {
+		t.Fatalf("expected rigid box to register a CCD wall hit")
+	}
+	if runner.State.RigidSphere.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected rigid sphere to stay before the thin wall exit, got x=%v", runner.State.RigidSphere.Motion.Position.X)
+	}
+	if runner.State.RigidBox.Motion.Position.X.Cmp(fixed.FromInt(1)) > 0 {
+		t.Fatalf("expected rigid box to stay before the thin wall exit, got x=%v", runner.State.RigidBox.Motion.Position.X)
+	}
+	if runner.State.RigidBox.Motion.Velocity.X.Cmp(fixed.Zero) >= 0 {
+		t.Fatalf("expected rigid box to bounce back after wall impact, got vx=%v", runner.State.RigidBox.Motion.Velocity.X)
 	}
 }
 

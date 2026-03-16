@@ -45,6 +45,7 @@ type SceneState struct {
 	PeakBounceHeight                   fixed.Fixed
 	PeakBounceHeights                  []fixed.Fixed
 	RigidSphereBounceDetected          bool
+	RigidSphereCCDHitDetected          bool
 	RigidSphereSphereCollisionDetected bool
 	RigidSpherePeakBounceHeight        fixed.Fixed
 	RigidSphereRotationChanged         bool
@@ -57,6 +58,7 @@ type SceneState struct {
 	BoxInitialRotations                []fixed.Fixed
 	BoxRotationChangedSet              []bool
 	RigidBoxBounceDetected             bool
+	RigidBoxCCDHitDetected             bool
 	RigidBoxBoxCollisionDetected       bool
 	RigidBoxPeakBounceHeight           fixed.Fixed
 	RigidBoxRotationChanged            bool
@@ -72,6 +74,27 @@ type SceneState struct {
 	SphereBoxHitCount                  int
 	CCDContactDetected                 bool
 	CCDTimeOfImpact                    fixed.Fixed
+	SleepingSphereCount                int
+	SleepingBoxCount                   int
+	ActiveCCDSphereCount               int
+	ActiveCCDBoxCount                  int
+	ActiveAngularRiskCCDBoxCount       int
+	ActiveDiscreteSphereCount          int
+	ActiveDiscreteBoxCount             int
+	EverActivatedCCDSphere             bool
+	EverActivatedCCDBox                bool
+	EverActivatedAngularRiskCCDBox     bool
+	EverSleptSphere                    bool
+	EverSleptBox                       bool
+	SleepingSphereSphereSkipCount      int
+	SleepingBoxBoxSkipCount            int
+	SleepingSphereBoxSkipCount         int
+	EverSkippedSleepingPairs           bool
+	BoxCCDPrecheckCount                int
+	BoxCCDPrecheckRejectCount          int
+	BoxCCDMeshSweepCount               int
+	EverRejectedBoxCCDPrecheck         bool
+	EverExecutedBoxCCDMeshSweep        bool
 }
 
 type ScenarioDefinition struct {

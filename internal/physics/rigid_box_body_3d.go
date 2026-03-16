@@ -80,13 +80,22 @@ func (q Quaternion) RotateVector(v geometry.Vector3) geometry.Vector3 {
 }
 
 type RigidBoxBody3D struct {
-	Motion             MotionState
-	HalfExtents        geometry.Vector3
-	Restitution        fixed.Fixed
-	Grounded           bool
-	Orientation        Quaternion
-	AngularVelocity    geometry.Vector3
-	InverseInertiaBody geometry.Vector3
+	Motion                   MotionState
+	HalfExtents              geometry.Vector3
+	Restitution              fixed.Fixed
+	UseCCD                   bool
+	CCDMode                  CCDMode
+	CCDVelocityThreshold     fixed.Fixed
+	CCDAngularSweepThreshold fixed.Fixed
+	SleepLinearThreshold     fixed.Fixed
+	SleepAngularThreshold    fixed.Fixed
+	SleepTickThreshold       int
+	SleepTickCount           int
+	Sleeping                 bool
+	Grounded                 bool
+	Orientation              Quaternion
+	AngularVelocity          geometry.Vector3
+	InverseInertiaBody       geometry.Vector3
 }
 
 type RigidBoxStepResult struct {
@@ -100,10 +109,16 @@ func NewRigidBoxBody3D(mass fixed.Fixed, halfExtents, position geometry.Vector3)
 	}
 
 	return RigidBoxBody3D{
-		Motion:             NewDynamicMotionState(mass, position),
-		HalfExtents:        halfExtents,
-		Orientation:        IdentityQuaternion(),
-		InverseInertiaBody: computeRigidBoxInverseInertiaBody(mass, halfExtents),
+		Motion:                   NewDynamicMotionState(mass, position),
+		HalfExtents:              halfExtents,
+		CCDMode:                  CCDModeDiscrete,
+		CCDVelocityThreshold:     halfExtents.Length(),
+		CCDAngularSweepThreshold: halfExtents.Length(),
+		SleepLinearThreshold:     fixed.FromFraction(1, 20),
+		SleepAngularThreshold:    fixed.FromFraction(1, 20),
+		SleepTickThreshold:       30,
+		Orientation:              IdentityQuaternion(),
+		InverseInertiaBody:       computeRigidBoxInverseInertiaBody(mass, halfExtents),
 	}
 }
 
@@ -182,6 +197,61 @@ func AdvanceRigidBoxBody3D(body *RigidBoxBody3D, dt fixed.Fixed, gravity geometr
 	integrateRigidBoxOrientation(body, dt)
 }
 
+func AdvanceRigidBoxBody3DWithoutForce(body *RigidBoxBody3D, dt fixed.Fixed) {
+	if body == nil {
+		return
+	}
+
+	StepLinearMotion(&body.Motion, dt)
+	integrateRigidBoxOrientation(body, dt)
+}
+
+func ResolveRigidBoxBody3DContact(body *RigidBoxBody3D, contactPoint, contactNormal geometry.Vector3, penetration, contactRestitution fixed.Fixed) RigidBoxStepResult {
+	if body == nil {
+		return RigidBoxStepResult{}
+	}
+
+	if contactNormal.LengthSquared() == fixed.Zero {
+		return RigidBoxStepResult{}
+	}
+
+	contactNormal = contactNormal.Normalize()
+	contactRestitution = clampUnitFixed(contactRestitution)
+
+	if penetration.Cmp(fixed.Zero) > 0 {
+		body.Motion.Position = body.Motion.Position.Add(contactNormal.Scale(penetration))
+		contactPoint = contactPoint.Add(contactNormal.Scale(penetration))
+	}
+
+	r := contactPoint.Sub(body.Motion.Position)
+	relativeVelocity := body.Motion.Velocity.Add(body.AngularVelocity.Cross(r))
+	normalVelocity := relativeVelocity.Dot(contactNormal)
+
+	if normalVelocity.Cmp(fixed.Zero) < 0 {
+		rCrossN := r.Cross(contactNormal)
+		angularContribution := applyInverseInertiaWorld(*body, rCrossN).Cross(r)
+		denominator := body.Motion.InverseMass.Add(contactNormal.Dot(angularContribution))
+		if denominator != fixed.Zero {
+			impulseMagnitude := normalVelocity.Neg().Mul(fixed.One.Add(contactRestitution)).Div(denominator)
+			impulse := contactNormal.Scale(impulseMagnitude)
+			body.Motion.Velocity = body.Motion.Velocity.Add(impulse.Scale(body.Motion.InverseMass))
+			body.AngularVelocity = body.AngularVelocity.Add(applyInverseInertiaWorld(*body, r.Cross(impulse)))
+		}
+	}
+
+	body.Grounded = contactNormal.Y.Cmp(fixed.Zero) > 0
+
+	return RigidBoxStepResult{
+		HadContact: true,
+		LastContact: SphereTriangleContact{
+			Hit:         true,
+			Point:       contactPoint,
+			Normal:      contactNormal,
+			Penetration: penetration,
+		},
+	}
+}
+
 func ResolveRigidBoxBody3DPlaneOverride(body *RigidBoxBody3D, planePoint, planeNormal geometry.Vector3, contactRestitution fixed.Fixed) RigidBoxStepResult {
 	if body == nil {
 		return RigidBoxStepResult{}
@@ -213,36 +283,7 @@ func ResolveRigidBoxBody3DPlaneOverride(body *RigidBoxBody3D, planePoint, planeN
 	}
 
 	penetration := minSeparation.Neg()
-	body.Motion.Position = body.Motion.Position.Add(planeNormal.Scale(penetration))
-
-	contactPoint := deepestPoint.Add(planeNormal.Scale(penetration))
-	r := contactPoint.Sub(body.Motion.Position)
-	relativeVelocity := body.Motion.Velocity.Add(body.AngularVelocity.Cross(r))
-	normalVelocity := relativeVelocity.Dot(planeNormal)
-
-	if normalVelocity.Cmp(fixed.Zero) < 0 {
-		rCrossN := r.Cross(planeNormal)
-		angularContribution := applyInverseInertiaWorld(*body, rCrossN).Cross(r)
-		denominator := body.Motion.InverseMass.Add(planeNormal.Dot(angularContribution))
-		if denominator != fixed.Zero {
-			impulseMagnitude := normalVelocity.Neg().Mul(fixed.One.Add(contactRestitution)).Div(denominator)
-			impulse := planeNormal.Scale(impulseMagnitude)
-			body.Motion.Velocity = body.Motion.Velocity.Add(impulse.Scale(body.Motion.InverseMass))
-			body.AngularVelocity = body.AngularVelocity.Add(applyInverseInertiaWorld(*body, r.Cross(impulse)))
-		}
-	}
-
-	body.Grounded = planeNormal.Y.Cmp(fixed.Zero) > 0
-
-	return RigidBoxStepResult{
-		HadContact: true,
-		LastContact: SphereTriangleContact{
-			Hit:         true,
-			Point:       contactPoint,
-			Normal:      planeNormal,
-			Penetration: penetration,
-		},
-	}
+	return ResolveRigidBoxBody3DContact(body, deepestPoint, planeNormal, penetration, contactRestitution)
 }
 
 func StepRigidBoxBody3DWithGravityAndPlaneOverride(body *RigidBoxBody3D, dt fixed.Fixed, gravity geometry.Vector3, planePoint, planeNormal geometry.Vector3, contactRestitution fixed.Fixed) RigidBoxStepResult {

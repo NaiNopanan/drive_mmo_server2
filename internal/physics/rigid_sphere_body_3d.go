@@ -6,14 +6,22 @@ import (
 )
 
 type RigidSphereBody3D struct {
-	Motion          MotionState
-	Radius          fixed.Fixed
-	Restitution     fixed.Fixed
-	Friction        fixed.Fixed
-	Grounded        bool
-	Orientation     Quaternion
-	AngularVelocity geometry.Vector3
-	InverseInertia  fixed.Fixed
+	Motion                MotionState
+	Radius                fixed.Fixed
+	Restitution           fixed.Fixed
+	Friction              fixed.Fixed
+	UseCCD                bool
+	CCDMode               CCDMode
+	CCDVelocityThreshold  fixed.Fixed
+	SleepLinearThreshold  fixed.Fixed
+	SleepAngularThreshold fixed.Fixed
+	SleepTickThreshold    int
+	SleepTickCount        int
+	Sleeping              bool
+	Grounded              bool
+	Orientation           Quaternion
+	AngularVelocity       geometry.Vector3
+	InverseInertia        fixed.Fixed
 }
 
 type RigidSphereStepResult struct {
@@ -27,10 +35,15 @@ func NewRigidSphereBody3D(mass, radius fixed.Fixed, position geometry.Vector3) R
 	}
 
 	return RigidSphereBody3D{
-		Motion:         NewDynamicMotionState(mass, position),
-		Radius:         radius,
-		Orientation:    IdentityQuaternion(),
-		InverseInertia: computeRigidSphereInverseInertia(mass, radius),
+		Motion:                NewDynamicMotionState(mass, position),
+		Radius:                radius,
+		CCDMode:               CCDModeDiscrete,
+		CCDVelocityThreshold:  radius,
+		SleepLinearThreshold:  fixed.FromFraction(1, 20),
+		SleepAngularThreshold: fixed.FromFraction(1, 20),
+		SleepTickThreshold:    30,
+		Orientation:           IdentityQuaternion(),
+		InverseInertia:        computeRigidSphereInverseInertia(mass, radius),
 	}
 }
 
@@ -65,6 +78,15 @@ func applyRigidSphereInverseInertia(body RigidSphereBody3D, vector geometry.Vect
 }
 
 func AdvanceRigidSphereBody3D(body *RigidSphereBody3D, dt fixed.Fixed) {
+	if body == nil {
+		return
+	}
+
+	StepLinearMotion(&body.Motion, dt)
+	integrateRigidSphereOrientation(body, dt)
+}
+
+func AdvanceRigidSphereBody3DWithoutForce(body *RigidSphereBody3D, dt fixed.Fixed) {
 	if body == nil {
 		return
 	}
