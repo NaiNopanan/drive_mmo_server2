@@ -47,6 +47,14 @@ func DefaultScenarioDefinitions() []ScenarioDefinition {
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxHybridCCDOptimizedScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario(),
 		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckHysteresisOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxSolverManifoldWarmStartOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverWarmStartOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverFrontierOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveBudgetOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxSmartAdaptiveBudgetOptimizedScenario(),
+		NewHundredRigidSpheresAndHundredRigidBoxesInBoxTimingAwareAdaptiveBudgetOptimizedScenario(),
 	}
 }
 
@@ -2508,6 +2516,13 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario
 							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
 							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
 							sphere.SleepTickThreshold = 4
+							if index%10 == 0 {
+								sphere.CCDActive = true
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(4, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 0 {
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								sphere.SleepTickCount = 2
+							}
 							spheres = append(spheres, sphere)
 						} else {
 							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
@@ -2529,6 +2544,13 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDOptimizedScenario
 								fixed.FromFraction(int64((index%7)-3), 3),
 								fixed.FromFraction(int64((index%9)-4), 4),
 							)
+							if index%10 == 1 {
+								box.CCDActive = true
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(9, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 1 {
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								box.SleepTickCount = 2
+							}
 							boxes = append(boxes, box)
 						}
 						index++
@@ -2655,6 +2677,13 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimized
 							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
 							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
 							sphere.SleepTickThreshold = 4
+							if index%10 == 0 {
+								sphere.CCDActive = true
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(4, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 0 {
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								sphere.SleepTickCount = 2
+							}
 							spheres = append(spheres, sphere)
 						} else {
 							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
@@ -2676,6 +2705,13 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimized
 								fixed.FromFraction(int64((index%7)-3), 3),
 								fixed.FromFraction(int64((index%9)-4), 4),
 							)
+							if index%10 == 1 {
+								box.CCDActive = true
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(9, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 1 {
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								box.SleepTickCount = 2
+							}
 							boxes = append(boxes, box)
 						}
 						index++
@@ -2761,6 +2797,703 @@ func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckOptimized
 			return ScenarioResult{
 				Status:  Passed,
 				Message: "Cheap box CCD precheck reduced expensive mesh sweeps while keeping the adaptive dense scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckHysteresisOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Hysteresis Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes add sphere and box CCD prechecks plus hysteresis on CCD and sleep thresholds to cut state thrash.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							sphere.CCDVelocityThreshold = sphere.Radius.Mul(fixed.FromInt(4))
+							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepTickThreshold = 4
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.CCDVelocityThreshold = box.HalfExtents.Length().Mul(fixed.FromInt(5))
+							box.CCDAngularSweepThreshold = box.HalfExtents.Length().Mul(fixed.FromFraction(3, 2))
+							box.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							box.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							box.SleepTickThreshold = 4
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 2),
+								fixed.FromFraction(int64((index%7)-3), 3),
+								fixed.FromFraction(int64((index%9)-4), 4),
+							)
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveCCDPrecheckHysteresisOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene did not exercise every collision path.",
+				}
+			}
+			if !state.EverRanSphereCCDPrecheck || !state.EverRanBoxCCDPrecheck {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene did not run both sphere and box CCD prechecks.",
+				}
+			}
+			if !state.EverRejectedSphereCCDPrecheck || !state.EverRejectedBoxCCDPrecheck {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene never rejected both sphere and box CCD sweeps.",
+				}
+			}
+			if !state.EverExecutedSphereCCDMeshSweep || !state.EverExecutedBoxCCDMeshSweep {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene never executed both sphere and box CCD sweeps.",
+				}
+			}
+			if !state.EverHeldSphereCCDHysteresis || !state.EverHeldBoxCCDHysteresis {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene never held CCD active inside the hysteresis band.",
+				}
+			}
+			if !state.EverHeldSphereSleepHysteresis || !state.EverHeldBoxSleepHysteresis {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Adaptive hysteresis scene never held sleep counters inside the hysteresis band.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Sphere and box CCD prechecks plus hysteresis reduced unnecessary sweeps while keeping the dense mixed scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Persistent Pairs Islands Warm Start Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes reuse persistent dynamic pairs, warm-start repeated contacts, and sleep settled contact islands together.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			spheres := make([]physics.RigidSphereBody3D, 0, 100)
+			boxes := make([]physics.RigidBoxBody3D, 0, 100)
+			radius := fixed.FromFraction(1, 4)
+			halfExtents := geometry.NewVector3(fixed.FromFraction(1, 4), fixed.FromFraction(1, 4), fixed.FromFraction(1, 4))
+			spacing := fixed.FromFraction(9, 10)
+			startX := fixed.FromFraction(-18, 5)
+			startZ := fixed.FromFraction(-18, 5)
+			startY := fixed.FromInt(8)
+			index := 0
+
+			for layer := 0; layer < 8; layer++ {
+				for row := 0; row < 5; row++ {
+					for column := 0; column < 5; column++ {
+						position := geometry.NewVector3(
+							startX.Add(spacing.Mul(fixed.FromInt(int64(column)))),
+							startY.Add(spacing.Mul(fixed.FromInt(int64(layer*2+row/3)))).Add(fixed.FromFraction(int64(row%3), 6)),
+							startZ.Add(spacing.Mul(fixed.FromInt(int64(row*2+column/3)))).Add(fixed.FromFraction(int64(column%3), 6)),
+						)
+						if index%2 == 0 {
+							sphere := physics.NewRigidSphereBody3D(fixed.One, radius, position)
+							sphere.Restitution = fixed.FromFraction(1, 5)
+							sphere.Friction = fixed.FromFraction(1, 10)
+							sphere.UseCCD = true
+							sphere.CCDMode = physics.CCDModeSweepTriangleMesh
+							sphere.CCDVelocityThreshold = sphere.Radius.Mul(fixed.FromInt(4))
+							sphere.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							sphere.SleepTickThreshold = 3
+							if index%10 == 0 {
+								sphere.CCDActive = true
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(4, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 0 {
+								sphere.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								sphere.SleepTickCount = 1
+							}
+							spheres = append(spheres, sphere)
+						} else {
+							box := physics.NewRigidBoxBody3D(fixed.One, halfExtents, position)
+							box.Restitution = fixed.FromFraction(1, 10)
+							box.UseCCD = true
+							box.CCDMode = physics.CCDModeSweepRotatingOrientedBoxTriangleMesh
+							box.CCDVelocityThreshold = box.HalfExtents.Length().Mul(fixed.FromInt(5))
+							box.CCDAngularSweepThreshold = box.HalfExtents.Length().Mul(fixed.FromFraction(3, 2))
+							box.SleepLinearThreshold = fixed.FromFraction(1, 2)
+							box.SleepAngularThreshold = fixed.FromFraction(1, 2)
+							box.SleepTickThreshold = 3
+							box.Orientation = physics.NewQuaternionFromEulerXYZ(
+								fixed.FromFraction(int64((index%7)-3), 10),
+								fixed.FromFraction(int64((index%9)-4), 12),
+								fixed.FromFraction(int64((index%11)-5), 14),
+							)
+							box.AngularVelocity = geometry.NewVector3(
+								fixed.FromFraction(int64((index%5)-2), 2),
+								fixed.FromFraction(int64((index%7)-3), 3),
+								fixed.FromFraction(int64((index%9)-4), 4),
+							)
+							if index%10 == 1 {
+								box.CCDActive = true
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(9, 5), fixed.Zero, fixed.Zero)
+							} else if index%14 == 1 {
+								box.Motion.Velocity = geometry.NewVector3(fixed.FromFraction(11, 20), fixed.Zero, fixed.Zero)
+								box.SleepTickCount = 1
+							}
+							boxes = append(boxes, box)
+						}
+						index++
+					}
+				}
+			}
+
+			return SceneState{
+				RigidSpheres:    spheres,
+				RigidBoxes:      boxes,
+				GroundTriangles: makeOpenBoxContainerTriangles(),
+			}
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Persistent-pairs scene did not exercise every collision path.",
+				}
+			}
+			if !state.EverReusedPersistentPairs {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Persistent-pairs scene never reused any cached dynamic pair.",
+				}
+			}
+			if !state.EverWarmStartedPairs {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Persistent-pairs scene never warm-started any repeated contact.",
+				}
+			}
+			if !state.EverBuiltSleepingIsland {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Persistent-pairs scene never built any contact island.",
+				}
+			}
+			if !state.EverSleptIsland {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Persistent-pairs scene never put any contact island to sleep.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Persistent pair reuse, warm starting, and sleeping islands kept the dense dynamic scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxSolverManifoldWarmStartOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Solver Manifold Warm Start Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes reuse persistent dynamic pairs while warm-starting cached manifold impulses directly inside the solvers and sleeping contact islands together.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			state := NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+			return state
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxSolverManifoldWarmStartOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if !state.SphereBoxCollisionDetected || !state.RigidSphereSphereCollisionDetected || !state.RigidBoxBoxCollisionDetected {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Solver warm-start scene did not exercise every collision path.",
+				}
+			}
+			if !state.EverReusedPersistentPairs {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Solver warm-start scene never reused any cached dynamic pair.",
+				}
+			}
+			if !state.EverWarmStartedPairs {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Solver warm-start scene never reused cached manifold impulses.",
+				}
+			}
+			hasImpulse := false
+			for _, entry := range state.PersistentContactCache {
+				if entry.NormalImpulse.Cmp(fixed.Zero) > 0 || entry.TangentImpulse.LengthSquared().Cmp(fixed.Zero) > 0 {
+					hasImpulse = true
+					break
+				}
+			}
+			if !hasImpulse {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Solver warm-start scene never stored any manifold impulse.",
+				}
+			}
+			if !state.EverBuiltSleepingIsland || !state.EverSleptIsland {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Solver warm-start scene never completed island sleeping.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+				if sphere.Motion.Position.Y.Cmp(sphere.Radius.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere tunneled below the box floor.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+				if box.Motion.Position.Y.Cmp(box.HalfExtents.Y.Sub(fixed.FromFraction(1, 5))) < 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box tunneled below the box floor.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Solver-level manifold warm start reused cached impulses while keeping the dense dynamic scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverWarmStartOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Warm Start Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes profile integration, CCD, broadphase, solver, and sleeping while using a cheaper first-pass-only solver manifold warm start.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			return NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverWarmStartOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes.",
+				}
+			}
+			if state.PhaseIntegrationNanos == 0 || state.PhaseCCDNanos == 0 || state.PhaseBroadphaseNanos == 0 || state.PhaseSolverNanos == 0 || state.PhaseSleepingNanos == 0 {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Profiled solver scene did not record every phase timing.",
+				}
+			}
+			if !state.EverReusedPersistentPairs || !state.EverWarmStartedPairs || !state.EverBuiltSleepingIsland {
+				return ScenarioResult{
+					Status:  Failed,
+					Message: "Profiled solver scene did not exercise persistent pairs, warm start, and sleeping islands.",
+				}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid sphere escaped the container bounds.",
+					}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{
+						Status:  Failed,
+						Message: "At least one rigid box escaped the container bounds.",
+					}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Profiled solver scene recorded per-phase timings while preserving persistent pair reuse and warm start behavior.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverFrontierOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Frontier Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes profile the full pipeline while narrowing solver pass two to only the contact frontier that actually hit in pass one.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			return NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxProfiledSolverFrontierOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{Status: Failed, Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes."}
+			}
+			if state.PhaseIntegrationNanos == 0 || state.PhaseCCDNanos == 0 || state.PhaseBroadphaseNanos == 0 || state.PhaseSolverNanos == 0 || state.PhaseSleepingNanos == 0 {
+				return ScenarioResult{Status: Failed, Message: "Profiled solver frontier scene did not record every phase timing."}
+			}
+			if !state.EverReusedPersistentPairs || !state.EverWarmStartedPairs || !state.EverBuiltSleepingIsland {
+				return ScenarioResult{Status: Failed, Message: "Profiled solver frontier scene did not exercise persistent pairs, warm start, and sleeping islands."}
+			}
+			if !state.EverReducedSolverPass2 || state.SolverPass2PairCount >= state.SolverPass1PairCount {
+				return ScenarioResult{Status: Failed, Message: "Profiled solver frontier scene never reduced pass-two solver work."}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid sphere escaped the container bounds."}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid box escaped the container bounds."}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Solver pass-two frontier narrowing preserved stability while cutting repeated solver work.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveBudgetOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive Budget Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes cap low-value CCD work and budget the solver frontier adaptively to reduce worst-case spikes.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			return NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxAdaptiveBudgetOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{Status: Failed, Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes."}
+			}
+			if state.PhaseIntegrationNanos == 0 || state.PhaseCCDNanos == 0 || state.PhaseBroadphaseNanos == 0 || state.PhaseSolverNanos == 0 || state.PhaseSleepingNanos == 0 {
+				return ScenarioResult{Status: Failed, Message: "Adaptive budget scene did not record every phase timing."}
+			}
+			if !state.EverAppliedSolverBudget || !state.EverReducedSolverPass2 {
+				return ScenarioResult{Status: Failed, Message: "Adaptive budget scene never reduced solver frontier work with a budget."}
+			}
+			if state.CCDBudgetSkipCount == 0 || !state.EverAppliedCCDBudget {
+				return ScenarioResult{Status: Failed, Message: "Adaptive budget scene never applied a CCD budget."}
+			}
+			if !state.EverReusedPersistentPairs || !state.EverWarmStartedPairs {
+				return ScenarioResult{Status: Failed, Message: "Adaptive budget scene did not exercise persistent pairs and warm start."}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid sphere escaped the container bounds."}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid box escaped the container bounds."}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Adaptive CCD and solver budgets reduced low-value work while keeping the dense scene stable.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxSmartAdaptiveBudgetOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Smart Adaptive Budget Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes adapt CCD and solver budgets to contact load each tick to reduce spikes more smoothly than a fixed budget.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			return NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxSmartAdaptiveBudgetOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{Status: Failed, Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes."}
+			}
+			if state.PhaseIntegrationNanos == 0 || state.PhaseCCDNanos == 0 || state.PhaseBroadphaseNanos == 0 || state.PhaseSolverNanos == 0 || state.PhaseSleepingNanos == 0 {
+				return ScenarioResult{Status: Failed, Message: "Smart adaptive budget scene did not record every phase timing."}
+			}
+			if !state.EverAppliedCCDBudget || !state.EverAppliedSolverBudget {
+				return ScenarioResult{Status: Failed, Message: "Smart adaptive budget scene never applied both CCD and solver budgets."}
+			}
+			if !state.EverReducedSolverPass2 || state.SolverPass2PairCount >= state.SolverPass1PairCount {
+				return ScenarioResult{Status: Failed, Message: "Smart adaptive budget scene never reduced pass-two solver work."}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid sphere escaped the container bounds."}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid box escaped the container bounds."}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Load-aware adaptive budgets preserved stability while smoothing spikes further.",
+			}
+		},
+	}
+}
+
+func NewHundredRigidSpheresAndHundredRigidBoxesInBoxTimingAwareAdaptiveBudgetOptimizedScenario() ScenarioDefinition {
+	const scenarioTicks = 600
+
+	return ScenarioDefinition{
+		Name:        "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Timing Aware Adaptive Budget Optimized",
+		Description: "One hundred rigid spheres and one hundred rigid boxes adapt CCD and solver budgets using both contact load and the previous tick's phase timings to suppress spikes more aggressively.",
+		MaxTicks:    scenarioTicks,
+		Setup: func() SceneState {
+			return NewHundredRigidSpheresAndHundredRigidBoxesInBoxPersistentPairsIslandsWarmStartOptimizedScenario().Setup()
+		},
+		Step: StepHundredRigidSpheresAndHundredRigidBoxesInBoxTimingAwareAdaptiveBudgetOptimizedScene,
+		Check: func(state SceneState) ScenarioResult {
+			if len(state.RigidSpheres) != 100 || len(state.RigidBoxes) != 100 {
+				return ScenarioResult{Status: Failed, Message: "Expected exactly one hundred rigid spheres and one hundred rigid boxes."}
+			}
+			if state.PhaseIntegrationNanos == 0 || state.PhaseCCDNanos == 0 || state.PhaseBroadphaseNanos == 0 || state.PhaseSolverNanos == 0 || state.PhaseSleepingNanos == 0 {
+				return ScenarioResult{Status: Failed, Message: "Timing-aware adaptive budget scene did not record every phase timing."}
+			}
+			if !state.EverAppliedCCDBudget || !state.EverAppliedSolverBudget {
+				return ScenarioResult{Status: Failed, Message: "Timing-aware adaptive budget scene never applied both CCD and solver budgets."}
+			}
+			if !state.EverReducedSolverPass2 || state.SolverPass2PairCount >= state.SolverPass1PairCount {
+				return ScenarioResult{Status: Failed, Message: "Timing-aware adaptive budget scene never reduced pass-two solver work."}
+			}
+
+			minX, maxX, minZ, maxZ, _ := openBoxContainerParameters()
+			for _, sphere := range state.RigidSpheres {
+				if sphere.Motion.Position.X.Cmp(minX.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.X.Cmp(maxX.Add(sphere.Radius)) > 0 ||
+					sphere.Motion.Position.Z.Cmp(minZ.Add(sphere.Radius.Neg())) < 0 ||
+					sphere.Motion.Position.Z.Cmp(maxZ.Add(sphere.Radius)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid sphere escaped the container bounds."}
+				}
+			}
+			for _, box := range state.RigidBoxes {
+				if box.Motion.Position.X.Cmp(minX.Add(box.HalfExtents.X.Neg())) < 0 ||
+					box.Motion.Position.X.Cmp(maxX.Add(box.HalfExtents.X)) > 0 ||
+					box.Motion.Position.Z.Cmp(minZ.Add(box.HalfExtents.Z.Neg())) < 0 ||
+					box.Motion.Position.Z.Cmp(maxZ.Add(box.HalfExtents.Z)) > 0 {
+					return ScenarioResult{Status: Failed, Message: "At least one rigid box escaped the container bounds."}
+				}
+			}
+
+			return ScenarioResult{
+				Status:  Passed,
+				Message: "Timing-aware adaptive budgets preserved stability while reacting to prior-frame hotspots.",
 			}
 		},
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 
@@ -38,6 +39,10 @@ func fixedToText(value fixed.Fixed) string {
 	return value.String()
 }
 
+func durationText(value time.Duration) string {
+	return fmt.Sprintf("%.3f ms", float64(value)/float64(time.Millisecond))
+}
+
 func optimizedScenarioDefinitions() []scenario.ScenarioDefinition {
 	definitions := scenario.DefaultScenarioDefinitions()
 	targetNames := []string{
@@ -45,6 +50,14 @@ func optimizedScenarioDefinitions() []scenario.ScenarioDefinition {
 		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Hybrid CCD Optimized",
 		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Optimized",
 		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Hysteresis Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Persistent Pairs Islands Warm Start Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Solver Manifold Warm Start Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Warm Start Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Frontier Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive Budget Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Smart Adaptive Budget Optimized",
+		"Hundred Rigid Spheres And Hundred Rigid Boxes In Box Timing Aware Adaptive Budget Optimized",
 	}
 
 	ordered := make([]scenario.ScenarioDefinition, 0, len(targetNames))
@@ -468,6 +481,14 @@ func shouldDrawObjectLabels(definition scenario.ScenarioDefinition) bool {
 		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Hybrid CCD Optimized" &&
 		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Optimized" &&
 		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive CCD Precheck Hysteresis Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Persistent Pairs Islands Warm Start Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Solver Manifold Warm Start Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Warm Start Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Profiled Solver Frontier Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Adaptive Budget Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Smart Adaptive Budget Optimized" &&
+		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Timing Aware Adaptive Budget Optimized" &&
 		definition.Name != "Hundred Rigid Spheres And Hundred Rigid Boxes In Box Optimized High Speed"
 }
 
@@ -698,9 +719,9 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 		grounded = spheres[0].Grounded
 	}
 
-	overlayHeight := float32(344)
+	overlayHeight := float32(372)
 	if state.BroadphaseCellCount > 0 || state.SphereSphereCandidateCount > 0 || state.BoxBoxCandidateCount > 0 || state.SphereBoxCandidateCount > 0 {
-		overlayHeight = 428
+		overlayHeight = 456
 	}
 	if state.SleepingSphereCount > 0 || state.SleepingBoxCount > 0 || state.ActiveCCDSphereCount > 0 || state.ActiveCCDBoxCount > 0 || state.ActiveDiscreteSphereCount > 0 || state.ActiveDiscreteBoxCount > 0 {
 		overlayHeight += 56
@@ -709,10 +730,13 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 		overlayHeight += 56
 	}
 	if state.BoxCCDPrecheckCount > 0 || state.BoxCCDPrecheckRejectCount > 0 || state.BoxCCDMeshSweepCount > 0 {
-		overlayHeight += 56
+		overlayHeight += 28
 	}
 	if state.CCDContactDetected {
 		overlayHeight += 28
+	}
+	if state.PhaseIntegrationNanos > 0 || state.PhaseCCDNanos > 0 || state.PhaseBroadphaseNanos > 0 || state.PhaseSolverNanos > 0 || state.PhaseSleepingNanos > 0 {
+		overlayHeight += 56
 	}
 	rl.DrawRectangle(18, 18, 560, int32(overlayHeight), rl.Fade(rl.RayWhite, 0.92))
 	rl.DrawRectangleLinesEx(rl.NewRectangle(18, 18, 560, overlayHeight), 2, rl.DarkGray)
@@ -727,26 +751,27 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 	rl.DrawText(status, 54, 125, 18, rl.White)
 	rl.DrawText(fmt.Sprintf("Tick: %d / %d", runner.Tick, definition.MaxTicks), 156, 125, 20, rl.DarkGray)
 
-	rl.DrawText(fmt.Sprintf("Result: %s", runner.LastResult.Message), 30, 162, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("CPU: %s total | %s last", durationText(runner.AccumulatedStepTime), durationText(runner.LastStepDuration)), 30, 162, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("Result: %s", runner.LastResult.Message), 30, 190, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Position: (%.3f, %.3f, %.3f)",
 		fixedToFloat32(position.X),
 		fixedToFloat32(position.Y),
 		fixedToFloat32(position.Z),
-	), 30, 198, 18, rl.Black)
+	), 30, 226, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Velocity: (%.3f, %.3f, %.3f)",
 		fixedToFloat32(velocity.X),
 		fixedToFloat32(velocity.Y),
 		fixedToFloat32(velocity.Z),
-	), 30, 226, 18, rl.Black)
-	rl.DrawText(fmt.Sprintf("Grounded: %v | Ever touched ground: %v", grounded, state.EverTouchedGround), 30, 254, 18, rl.Black)
-	rl.DrawText(fmt.Sprintf("Object count: %d", objectCount), 30, 282, 18, rl.Black)
+	), 30, 254, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("Grounded: %v | Ever touched ground: %v", grounded, state.EverTouchedGround), 30, 282, 18, rl.Black)
+	rl.DrawText(fmt.Sprintf("Object count: %d", objectCount), 30, 310, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("Contact normal: (%.3f, %.3f, %.3f)",
 		fixedToFloat32(contactNormal.X),
 		fixedToFloat32(contactNormal.Y),
 		fixedToFloat32(contactNormal.Z),
-	), 30, 310, 18, rl.Black)
+	), 30, 338, 18, rl.Black)
 	rl.DrawText(fmt.Sprintf("View: %s", cameraViewLabel(viewMode)), 420, 125, 18, rl.Black)
-	infoY := int32(338)
+	infoY := int32(366)
 	if state.BroadphaseCellCount > 0 || state.SphereSphereCandidateCount > 0 || state.BoxBoxCandidateCount > 0 || state.SphereBoxCandidateCount > 0 {
 		rl.DrawText(
 			fmt.Sprintf("Broadphase cells: %d", state.BroadphaseCellCount),
@@ -805,26 +830,33 @@ func drawOverlayWithCameraMode(definition scenario.ScenarioDefinition, runner *s
 		)
 		infoY += 56
 	}
-	if state.BoxCCDPrecheckCount > 0 || state.BoxCCDPrecheckRejectCount > 0 || state.BoxCCDMeshSweepCount > 0 {
+	if state.CCDContactDetected {
+		rl.DrawText(fmt.Sprintf("TOI: %.6f", float64(state.CCDTimeOfImpact.Raw())/float64(uint64(1)<<fixed.FracBits)), 30, infoY, 18, rl.Black)
+		infoY += 28
+	}
+	if state.PhaseIntegrationNanos > 0 || state.PhaseCCDNanos > 0 || state.PhaseBroadphaseNanos > 0 || state.PhaseSolverNanos > 0 || state.PhaseSleepingNanos > 0 {
 		rl.DrawText(
-			fmt.Sprintf("Box CCD precheck: %d | reject: %d", state.BoxCCDPrecheckCount, state.BoxCCDPrecheckRejectCount),
+			fmt.Sprintf("Phase ms Int/CCD/BP: %.3f / %.3f / %.3f",
+				float64(state.PhaseIntegrationNanos)/1e6,
+				float64(state.PhaseCCDNanos)/1e6,
+				float64(state.PhaseBroadphaseNanos)/1e6,
+			),
 			30,
 			infoY,
 			18,
 			rl.Black,
 		)
 		rl.DrawText(
-			fmt.Sprintf("Box full mesh sweeps: %d", state.BoxCCDMeshSweepCount),
+			fmt.Sprintf("Phase ms Solver/Sleep: %.3f / %.3f",
+				float64(state.PhaseSolverNanos)/1e6,
+				float64(state.PhaseSleepingNanos)/1e6,
+			),
 			30,
 			infoY+28,
 			18,
 			rl.Black,
 		)
 		infoY += 56
-	}
-	if state.CCDContactDetected {
-		rl.DrawText(fmt.Sprintf("TOI: %.6f", float64(state.CCDTimeOfImpact.Raw())/float64(uint64(1)<<fixed.FracBits)), 30, infoY, 18, rl.Black)
-		infoY += 28
 	}
 	rl.DrawText(fmt.Sprintf("Hash: %016x", sceneHash), 30, infoY, 18, rl.Black)
 	rl.DrawText("Controls: Space pause | N step | R reset | Left/Right scene | 1-5 view | Wheel zoom | WASD move in perspective", 30, infoY+28, 16, rl.Gray)

@@ -12,6 +12,7 @@ type RigidSphereBody3D struct {
 	Friction              fixed.Fixed
 	UseCCD                bool
 	CCDMode               CCDMode
+	CCDActive             bool
 	CCDVelocityThreshold  fixed.Fixed
 	SleepLinearThreshold  fixed.Fixed
 	SleepAngularThreshold fixed.Fixed

@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"fmt"
+	"time"
 
 	"server2/internal/fixed"
 	"server2/internal/geometry"
@@ -93,8 +94,92 @@ type SceneState struct {
 	BoxCCDPrecheckCount                int
 	BoxCCDPrecheckRejectCount          int
 	BoxCCDMeshSweepCount               int
+	EverRanBoxCCDPrecheck              bool
 	EverRejectedBoxCCDPrecheck         bool
 	EverExecutedBoxCCDMeshSweep        bool
+	SphereCCDPrecheckCount             int
+	SphereCCDPrecheckRejectCount       int
+	SphereCCDMeshSweepCount            int
+	EverRanSphereCCDPrecheck           bool
+	EverRejectedSphereCCDPrecheck      bool
+	EverExecutedSphereCCDMeshSweep     bool
+	SphereCCDHysteresisHoldCount       int
+	BoxCCDHysteresisHoldCount          int
+	SphereSleepHysteresisHoldCount     int
+	BoxSleepHysteresisHoldCount        int
+	EverHeldSphereCCDHysteresis        bool
+	EverHeldBoxCCDHysteresis           bool
+	EverHeldSphereSleepHysteresis      bool
+	EverHeldBoxSleepHysteresis         bool
+	PersistentContactCache             []PersistentContactCacheEntry
+	PersistentPairReuseCount           int
+	WarmStartedPairCount               int
+	SleepingIslandCount                int
+	LargestSleepingIslandSize          int
+	EverReusedPersistentPairs          bool
+	EverWarmStartedPairs               bool
+	EverBuiltSleepingIsland            bool
+	EverSleptIsland                    bool
+	PhaseIntegrationNanos              int64
+	PhaseCCDNanos                      int64
+	PhaseBroadphaseNanos               int64
+	PhaseSolverNanos                   int64
+	PhaseSleepingNanos                 int64
+	SolverPass1PairCount               int
+	SolverPass2PairCount               int
+	EverReducedSolverPass2             bool
+	CCDBudgetSkipCount                 int
+	SolverFrontierBudgetCount          int
+	EverAppliedCCDBudget               bool
+	EverAppliedSolverBudget            bool
+	VehicleChassis                     physics.RigidBoxBody3D
+	VehicleProbeLocalOffsets           []geometry.Vector3
+	VehicleWheelRadius                 fixed.Fixed
+	VehicleWheelWidth                  fixed.Fixed
+	VehicleUseWheelCollider            bool
+	VehicleWheelCorrectionClamp        fixed.Fixed
+	VehicleWheelProbes                 []VehicleWheelProbeState
+	VehicleGroundedProbeCount          int
+	VehicleAverageCompression          fixed.Fixed
+	VehicleUprightDot                  fixed.Fixed
+	VehicleSettled                     bool
+	VehicleEverHitWall                 bool
+	VehicleThrottleInput               fixed.Fixed
+	VehicleSteerInput                  fixed.Fixed
+	VehicleFrontGroundedProbeCount     int
+	VehicleRearGroundedProbeCount      int
+	VehicleSuspensionRestLength        fixed.Fixed
+	VehicleSuspensionSweepDistance     fixed.Fixed
+	VehicleSuspensionSpring            fixed.Fixed
+	VehicleSuspensionDamper            fixed.Fixed
+	VehicleDriveForce                  fixed.Fixed
+	VehicleEngineBrake                 fixed.Fixed
+	VehicleFrontDriveShare             fixed.Fixed
+	VehicleFrontGrip                   fixed.Fixed
+	VehicleRearGrip                    fixed.Fixed
+	VehicleAntiRoll                    fixed.Fixed
+	VehicleMaxSteerAngle               fixed.Fixed
+	VehicleRearSteerAssist             fixed.Fixed
+	VehicleWheelGroundedGraceTicks     []int
+	VehicleWallContactActive           bool
+}
+
+type PersistentContactCacheEntry struct {
+	Key            uint64
+	Point          geometry.Vector3
+	Normal         geometry.Vector3
+	NormalImpulse  fixed.Fixed
+	TangentImpulse geometry.Vector3
+}
+
+type VehicleWheelProbeState struct {
+	LocalOffset   geometry.Vector3
+	WorldPosition geometry.Vector3
+	ContactPoint  geometry.Vector3
+	ContactNormal geometry.Vector3
+	WheelRight    geometry.Vector3
+	Compression   fixed.Fixed
+	Grounded      bool
 }
 
 type ScenarioDefinition struct {
@@ -107,11 +192,14 @@ type ScenarioDefinition struct {
 }
 
 type ScenarioRunner struct {
-	Definition ScenarioDefinition
-	State      SceneState
-	Tick       int
-	Finished   bool
-	LastResult ScenarioResult
+	Definition          ScenarioDefinition
+	State               SceneState
+	Tick                int
+	Finished            bool
+	LastResult          ScenarioResult
+	LastStepDuration    time.Duration
+	AccumulatedStepTime time.Duration
+	WallClockStartTime  time.Time
 }
 
 func NewScenarioRunner(definition ScenarioDefinition) *ScenarioRunner {
@@ -139,6 +227,9 @@ func (r *ScenarioRunner) Reset() {
 	r.State.Tick = 0
 	r.Tick = 0
 	r.Finished = false
+	r.LastStepDuration = 0
+	r.AccumulatedStepTime = 0
+	r.WallClockStartTime = time.Now()
 	r.LastResult = ScenarioResult{
 		Status:  Running,
 		Message: "Reset",
@@ -155,7 +246,10 @@ func (r *ScenarioRunner) Step() {
 		return
 	}
 
+	start := time.Now()
 	r.Definition.Step(&r.State)
+	r.LastStepDuration = time.Since(start)
+	r.AccumulatedStepTime += r.LastStepDuration
 	r.Tick++
 	r.State.Tick = uint64(r.Tick)
 

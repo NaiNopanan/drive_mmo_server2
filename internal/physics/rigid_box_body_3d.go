@@ -85,6 +85,7 @@ type RigidBoxBody3D struct {
 	Restitution              fixed.Fixed
 	UseCCD                   bool
 	CCDMode                  CCDMode
+	CCDActive                bool
 	CCDVelocityThreshold     fixed.Fixed
 	CCDAngularSweepThreshold fixed.Fixed
 	SleepLinearThreshold     fixed.Fixed
