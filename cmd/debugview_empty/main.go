@@ -5,13 +5,12 @@ import (
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 
-	"server2/internal/base/fixed"
-	"server2/internal/base/geometry"
-	"server2/internal/engine/core"
-	"server2/internal/engine/ecs"
-	enginephysics "server2/internal/engine/physics"
-	enginerender "server2/internal/engine/render"
-	"server2/internal/engine/scene"
+	"server2/core"
+	"server2/debugview"
+	"server2/math/fixed"
+	"server2/math/geometry"
+	"server2/physics"
+	"server2/world"
 )
 
 const (
@@ -37,60 +36,60 @@ func setSideViewCamera(camera *rl.Camera3D) {
 	camera.Projection = rl.CameraPerspective
 }
 
-func buildSandboxScene(world *ecs.World) {
-	if world == nil {
+func buildSandboxScene(simWorld *world.World) {
+	if simWorld == nil {
 		return
 	}
 
-	ground := world.NewEntity()
-	world.SetName(ground, scene.NameComponent{Value: "ground_plane"})
-	world.SetTransform(ground, scene.IdentityTransform())
-	world.SetBody(ground, enginephysics.NewStaticPlane(
+	ground := simWorld.NewEntity()
+	simWorld.SetName(ground, world.NameComponent{Value: "ground_plane"})
+	simWorld.SetTransform(ground, world.IdentityTransform())
+	simWorld.SetBody(ground, physics.NewStaticPlane(
 		geometry.NewVector3(fixed.Zero, fixed.Zero, fixed.Zero),
 		geometry.NewVector3(fixed.Zero, fixed.One, fixed.Zero),
 	))
-	world.SetPrimitiveRender(ground, scene.NewPrimitiveRender(scene.NewColorRGBA(215, 215, 215, 255)))
+	simWorld.SetPrimitiveRender(ground, world.NewPrimitiveRender(world.NewColorRGBA(215, 215, 215, 255)))
 
-	staticBox := world.NewEntity()
-	world.SetName(staticBox, scene.NameComponent{Value: "static_box"})
-	world.SetTransform(staticBox, scene.IdentityTransform())
-	world.SetBody(staticBox, enginephysics.NewStaticBox(
+	staticBox := simWorld.NewEntity()
+	simWorld.SetName(staticBox, world.NameComponent{Value: "static_box"})
+	simWorld.SetTransform(staticBox, world.IdentityTransform())
+	simWorld.SetBody(staticBox, physics.NewStaticBox(
 		geometry.NewVector3(fixed.Zero, fixed.FromInt(1), fixed.Zero),
 		geometry.NewVector3(fixed.FromInt(2), fixed.One, fixed.FromInt(2)),
 	))
-	world.SetPrimitiveRender(staticBox, scene.NewPrimitiveRender(scene.NewColorRGBA(150, 150, 150, 255)))
+	simWorld.SetPrimitiveRender(staticBox, world.NewPrimitiveRender(world.NewColorRGBA(150, 150, 150, 255)))
 
-	dynamicSphere := world.NewEntity()
-	world.SetName(dynamicSphere, scene.NameComponent{Value: "dynamic_sphere"})
-	world.SetTransform(dynamicSphere, scene.IdentityTransform())
-	body := enginephysics.NewDynamicSphere(
+	dynamicSphere := simWorld.NewEntity()
+	simWorld.SetName(dynamicSphere, world.NameComponent{Value: "dynamic_sphere"})
+	simWorld.SetTransform(dynamicSphere, world.IdentityTransform())
+	body := physics.NewDynamicSphere(
 		fixed.FromInt(1),
 		geometry.NewVector3(fixed.FromFraction(-7, 2), fixed.FromInt(6), fixed.FromFraction(3, 2)),
 		fixed.FromFraction(4, 5),
 	)
 	body.Velocity = geometry.NewVector3(fixed.FromFraction(3, 2), fixed.Zero, fixed.FromFraction(1, 2))
-	world.SetBody(dynamicSphere, body)
-	world.SetPrimitiveRender(dynamicSphere, scene.NewPrimitiveRender(scene.NewColorRGBA(80, 170, 255, 255)))
+	simWorld.SetBody(dynamicSphere, body)
+	simWorld.SetPrimitiveRender(dynamicSphere, world.NewPrimitiveRender(world.NewColorRGBA(80, 170, 255, 255)))
 
-	kinematicBox := world.NewEntity()
-	world.SetName(kinematicBox, scene.NameComponent{Value: "kinematic_box"})
-	world.SetTransform(kinematicBox, scene.IdentityTransform())
-	kinematicBody := enginephysics.NewKinematicBox(
+	kinematicBox := simWorld.NewEntity()
+	simWorld.SetName(kinematicBox, world.NameComponent{Value: "kinematic_box"})
+	simWorld.SetTransform(kinematicBox, world.IdentityTransform())
+	kinematicBody := physics.NewKinematicBox(
 		geometry.NewVector3(fixed.FromInt(6), fixed.FromInt(2), fixed.Zero),
 		geometry.NewVector3(fixed.One, fixed.One, fixed.One),
 	)
 	kinematicBody.KinematicTargetPosition = geometry.NewVector3(fixed.FromInt(6), fixed.FromInt(2), fixed.Zero)
-	world.SetBody(kinematicBox, kinematicBody)
-	world.SetPrimitiveRender(kinematicBox, scene.NewPrimitiveRender(scene.NewColorRGBA(245, 160, 60, 255)))
+	simWorld.SetBody(kinematicBox, kinematicBody)
+	simWorld.SetPrimitiveRender(kinematicBox, world.NewPrimitiveRender(world.NewColorRGBA(245, 160, 60, 255)))
 }
 
-func updateKinematicDemo(world *ecs.World, frame int) {
-	if world == nil {
+func updateKinematicDemo(simWorld *world.World, frame int) {
+	if simWorld == nil {
 		return
 	}
 
-	for id, body := range world.Bodies {
-		if body.BodyType != enginephysics.BodyTypeKinematic {
+	for id, body := range simWorld.Bodies {
+		if body.BodyType != physics.BodyTypeKinematic {
 			continue
 		}
 
@@ -110,7 +109,7 @@ func updateKinematicDemo(world *ecs.World, frame int) {
 		target := geometry.NewVector3(x, fixed.FromInt(2), z)
 		body.KinematicTargetVelocity = target.Sub(body.Position)
 		body.KinematicTargetPosition = target
-		world.Bodies[id] = body
+		simWorld.Bodies[id] = body
 	}
 }
 
@@ -130,7 +129,7 @@ func main() {
 	}
 
 	engine := core.New(core.DefaultConfig())
-	renderer := enginerender.NewRaylibDebugRenderer(enginerender.RaylibDebugRendererConfig{
+	renderer := debugview.NewRaylibDebugRenderer(debugview.RaylibDebugRendererConfig{
 		PlaneExtent: fixed.FromInt(40),
 	})
 	buildSandboxScene(engine.World())
