@@ -242,7 +242,12 @@ func applyBodyTilt(vehicle VehicleBody, support supportSolution) VehicleBody {
 	targetRoll := float32(0)
 	smooth := float32(0.18)
 
-	if support.State != SupportStateFalling {
+	if support.State == SupportStateFalling {
+		// ตอนรถลอยให้งุ้มหัวลงเล็กน้อยพอให้ดูมีน้ำหนัก แต่ไม่ทิ่มแรงเกินไป
+		noseDown := clamp(0.05+max(-vehicle.VerticalVel, 0)*0.025+vehicle.Speed*0.001, 0.05, 0.22)
+		targetPitch = -noseDown
+		smooth = 0.14
+	} else {
 		targetPitch = clamp(support.TargetPitch, -0.6, 0.6)
 		targetRoll = clamp(support.TargetRoll, -0.6, 0.6)
 		smooth = 0.35
