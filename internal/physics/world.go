@@ -61,6 +61,7 @@ func snapshotFromVehicle(vehicle VehicleBody, isPlayer bool) VehicleSnapshot {
 		Speed:        vehicle.Speed,
 		Height:       vehicle.Height,
 		GroundHeight: vehicle.GroundHeight,
+		BodyHitMap:   vehicle.BodyHitMap,
 		SupportState: vehicle.SupportState,
 		SupportHits:  vehicle.SupportHits,
 		Length:       vehicle.Params.BodyLength,

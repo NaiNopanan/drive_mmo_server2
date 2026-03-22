@@ -28,6 +28,7 @@ func DefaultVehicleParams() VehicleParams {
 		Grip:               9.0,
 		DriftGrip:          3.2,
 		BodyLength:         4.4,
+		BodyHeight:         0.9,
 		BodyWidth:          1.9,
 		Suspension: SuspensionParams{
 			RestLength:      0.50,

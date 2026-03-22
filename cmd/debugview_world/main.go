@@ -269,7 +269,13 @@ func drawScene(snapshot physics.WorldSnapshot, renderer debugRenderer) {
 	drawGround(snapshot)
 	drawWorldBounds(snapshot)
 	drawStaticMesh(snapshot.StaticMesh)
-	renderer.DrawVehicleCollider(snapshot.Player, rl.NewColor(86, 194, 255, 110), rl.NewColor(86, 194, 255, 255))
+	fillColor := rl.NewColor(86, 194, 255, 110)
+	lineColor := rl.NewColor(86, 194, 255, 255)
+	if snapshot.Player.BodyHitMap {
+		fillColor = rl.NewColor(255, 164, 64, 140)
+		lineColor = rl.NewColor(255, 164, 64, 255)
+	}
+	renderer.DrawVehicleCollider(snapshot.Player, fillColor, lineColor)
 	drawWheelRays(snapshot.Player)
 }
 
@@ -520,6 +526,7 @@ func interpolateVehicleSnapshot(previous, current physics.VehicleSnapshot, alpha
 		Speed:        lerp(previous.Speed, current.Speed, alpha),
 		Height:       lerp(previous.Height, current.Height, alpha),
 		GroundHeight: lerp(previous.GroundHeight, current.GroundHeight, alpha),
+		BodyHitMap:   current.BodyHitMap,
 		SupportState: current.SupportState,
 		SupportHits:  current.SupportHits,
 		Length:       current.Length,

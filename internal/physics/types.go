@@ -49,6 +49,7 @@ type VehicleParams struct {
 	Grip               float32
 	DriftGrip          float32
 	BodyLength         float32
+	BodyHeight         float32
 	BodyWidth          float32
 	Suspension         SuspensionParams
 }
@@ -79,6 +80,7 @@ type VehicleBody struct {
 	Height       float32
 	GroundHeight float32
 	VerticalVel  float32
+	BodyHitMap   bool
 	SupportState SupportState
 	SupportHits  int
 	Wheels       [wheelCount]WheelState
@@ -109,6 +111,7 @@ type VehicleSnapshot struct {
 	Speed        float32
 	Height       float32
 	GroundHeight float32
+	BodyHitMap   bool
 	SupportState SupportState
 	SupportHits  int
 	Wheels       [wheelCount]WheelSnapshot
