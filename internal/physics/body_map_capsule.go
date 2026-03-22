@@ -42,12 +42,14 @@ func (w *PhysicsWorld) queryBodyCapsuleMapHit(vehicle VehicleBody) (bodyMapHit, 
 	if len(w.staticMesh.Triangles) == 0 {
 		return bodyMapHit{}, false
 	}
+	return queryBodyCapsuleMapHitTriangles(bodyCapsuleFromVehicle(vehicle), w.staticMesh.Triangles)
+}
 
-	capsule := bodyCapsuleFromVehicle(vehicle)
+func queryBodyCapsuleMapHitTriangles(capsule bodyCapsule, triangles []worldmesh.Triangle) (bodyMapHit, bool) {
 	minBounds, maxBounds := bodyCapsuleAABB(capsule)
 	bestHit := bodyMapHit{}
 	hasHit := false
-	for _, triangle := range w.staticMesh.Triangles {
+	for _, triangle := range triangles {
 		if !triangleCouldHitBodyOBB(minBounds, maxBounds, triangle) {
 			continue
 		}
