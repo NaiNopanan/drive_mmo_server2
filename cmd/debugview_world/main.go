@@ -276,8 +276,7 @@ func drawScene(snapshot physics.WorldSnapshot, renderer debugRenderer) {
 		lineColor = rl.NewColor(255, 164, 64, 255)
 	}
 	renderer.DrawVehicleCollider(snapshot.Player, fillColor, lineColor)
-	drawOBBCCDDebug(snapshot.Player)
-	drawWheelRays(snapshot.Player)
+	drawKinematicDebug(snapshot.Player)
 }
 
 func drawGround(snapshot physics.WorldSnapshot) {
@@ -342,39 +341,29 @@ func drawQuad(a, b, c, d rl.Vector3, color rl.Color) {
 	rl.DrawTriangle3D(a, c, d, color)
 }
 
-func drawWheelRays(vehicle physics.VehicleSnapshot) {
-	for _, wheel := range vehicle.Wheels {
-		mountPoint := toRenderVector3(wheel.MountPoint)
-		if wheel.Hit {
-			wheelCenter := toRenderVector3(wheel.WheelCenter)
-			hitPoint := toRenderVector3(wheel.HitPoint)
-			rl.DrawLine3D(mountPoint, wheelCenter, rl.NewColor(255, 210, 64, 255))
-			rl.DrawLine3D(wheelCenter, hitPoint, rl.NewColor(255, 120, 96, 255))
-			rl.DrawSphere(wheelCenter, 0.07, rl.NewColor(255, 245, 180, 255))
-			rl.DrawSphere(hitPoint, 0.05, rl.NewColor(255, 120, 96, 255))
-			continue
-		}
+func drawKinematicDebug(vehicle physics.VehicleSnapshot) {
+	center := capsuleCenter(vehicle.Position, vehicle.Height, vehicle.Heading, vehicle.Pitch, vehicle.Roll, vehicle.ColliderRadius)
 
-		end := rl.Vector3Add(mountPoint, rl.NewVector3(0, -0.8, 0))
-		rl.DrawLine3D(mountPoint, end, rl.NewColor(255, 210, 64, 180))
-	}
-}
-
-func drawOBBCCDDebug(vehicle physics.VehicleSnapshot) {
-	if !vehicle.OBBCCD.Hit {
-		return
+	if vehicle.Kinematic.Grounded && vehicle.Kinematic.GroundNormal.LengthSquared() > 0 {
+		groundEnd := rl.Vector3Add(center, rl.NewVector3(
+			vehicle.Kinematic.GroundNormal.X*1.2,
+			vehicle.Kinematic.GroundNormal.Y*1.2,
+			vehicle.Kinematic.GroundNormal.Z*1.2,
+		))
+		rl.DrawLine3D(center, groundEnd, rl.NewColor(120, 255, 170, 255))
+		rl.DrawSphere(groundEnd, 0.05, rl.NewColor(120, 255, 170, 255))
 	}
 
-	normalColor := rl.NewColor(255, 96, 96, 255)
-	center := capsuleCenter(vehicle.OBBCCD.Position, vehicle.OBBCCD.Height, vehicle.OBBCCD.Heading, vehicle.OBBCCD.Pitch, vehicle.OBBCCD.Roll, vehicle.ColliderRadius)
-	normalEnd := rl.Vector3Add(center, rl.NewVector3(
-		vehicle.OBBCCD.Normal.X*1.2,
-		vehicle.OBBCCD.Normal.Y*1.2,
-		vehicle.OBBCCD.Normal.Z*1.2,
-	))
-	rl.DrawSphere(center, 0.06, rl.NewColor(255, 232, 96, 255))
-	rl.DrawLine3D(center, normalEnd, normalColor)
-	rl.DrawSphere(normalEnd, 0.05, normalColor)
+	if vehicle.Kinematic.ContactCount > 0 && vehicle.Kinematic.ContactNormal.LengthSquared() > 0 {
+		contactEnd := rl.Vector3Add(center, rl.NewVector3(
+			vehicle.Kinematic.ContactNormal.X*1.4,
+			vehicle.Kinematic.ContactNormal.Y*1.4,
+			vehicle.Kinematic.ContactNormal.Z*1.4,
+		))
+		rl.DrawSphere(center, 0.06, rl.NewColor(255, 232, 96, 255))
+		rl.DrawLine3D(center, contactEnd, rl.NewColor(255, 96, 96, 255))
+		rl.DrawSphere(contactEnd, 0.05, rl.NewColor(255, 96, 96, 255))
+	}
 }
 
 func chassisCorners(vehicle physics.VehicleSnapshot) [8]rl.Vector3 {
@@ -444,30 +433,37 @@ func drawHUD(snapshot physics.WorldSnapshot, paused bool, mode renderMode, camer
 		"1/2/3/4 = camera, P = pause, N = single step, R = reset",
 		"F1 = smooth, F2 = raw",
 		fmt.Sprintf("tick: %d", snapshot.Tick),
+		"controller: kinematic capsule",
 		fmt.Sprintf("speed: %.1f", snapshot.Player.Speed),
+		fmt.Sprintf("vertical vel: %.2f", snapshot.Player.VerticalVel),
 		fmt.Sprintf("car size: %.1fm x %.1fm", snapshot.Player.Length, snapshot.Player.Width),
 		fmt.Sprintf("height: %.2fm / ground: %.2fm", snapshot.Player.Height, snapshot.Player.GroundHeight),
-		fmt.Sprintf("pitch: %.2f / roll: %.2f", snapshot.Player.Pitch, snapshot.Player.Roll),
-		fmt.Sprintf("suspension: rest=%.2fm wheel=%.2fm", 0.50, 0.32),
-		fmt.Sprintf("support: %s (%d hits)", snapshot.Player.SupportState, snapshot.Player.SupportHits),
+		fmt.Sprintf("grounded: %t", snapshot.Player.Kinematic.Grounded),
+		fmt.Sprintf("support: %s (%d contacts)", snapshot.Player.SupportState, snapshot.Player.Kinematic.ContactCount),
 		fmt.Sprintf("heading: %.2f", snapshot.Player.Heading),
 		fmt.Sprintf("position: [%.1f, %.1f]", snapshot.Player.Position.X, snapshot.Player.Position.Z),
 		fmt.Sprintf("world triangles: %d", len(snapshot.StaticMesh.Triangles)),
 		fmt.Sprintf("world size: %.1fm x %.1fm", snapshot.StaticMesh.Max.X-snapshot.StaticMesh.Min.X, snapshot.StaticMesh.Max.Z-snapshot.StaticMesh.Min.Z),
 	}
-	if snapshot.Player.OBBCCD.Hit {
+	if snapshot.Player.Kinematic.ContactCount > 0 {
 		lines = append(lines, fmt.Sprintf(
-			"ccd: hit toi=%.2f n=[%.2f %.2f %.2f]",
-			snapshot.Player.OBBCCD.Time,
-			snapshot.Player.OBBCCD.Normal.X,
-			snapshot.Player.OBBCCD.Normal.Y,
-			snapshot.Player.OBBCCD.Normal.Z,
+			"contact normal: [%.2f %.2f %.2f]",
+			snapshot.Player.Kinematic.ContactNormal.X,
+			snapshot.Player.Kinematic.ContactNormal.Y,
+			snapshot.Player.Kinematic.ContactNormal.Z,
 		))
 	} else {
-		lines = append(lines, "ccd: no hit")
+		lines = append(lines, "contact normal: none")
 	}
-	for _, wheel := range snapshot.Player.Wheels {
-		lines = append(lines, fmt.Sprintf("%s: hit=%t len=%.2f comp=%.2f", wheel.Label, wheel.Hit, wheel.SuspensionLength, wheel.Compression))
+	if snapshot.Player.Kinematic.Grounded {
+		lines = append(lines, fmt.Sprintf(
+			"ground normal: [%.2f %.2f %.2f]",
+			snapshot.Player.Kinematic.GroundNormal.X,
+			snapshot.Player.Kinematic.GroundNormal.Y,
+			snapshot.Player.Kinematic.GroundNormal.Z,
+		))
+	} else {
+		lines = append(lines, "ground normal: airborne")
 	}
 
 	state := "running"
@@ -570,8 +566,10 @@ func interpolateVehicleSnapshot(previous, current physics.VehicleSnapshot, alpha
 		Speed:              lerp(previous.Speed, current.Speed, alpha),
 		Height:             lerp(previous.Height, current.Height, alpha),
 		GroundHeight:       lerp(previous.GroundHeight, current.GroundHeight, alpha),
+		VerticalVel:        lerp(previous.VerticalVel, current.VerticalVel, alpha),
 		BodyHitMap:         current.BodyHitMap,
 		OBBCCD:             interpolateOBBCCDDebug(previous.OBBCCD, current.OBBCCD, alpha),
+		Kinematic:          interpolateKinematicDebug(previous.Kinematic, current.Kinematic, alpha),
 		SupportState:       current.SupportState,
 		SupportHits:        current.SupportHits,
 		Length:             current.Length,
@@ -587,6 +585,26 @@ func interpolateVehicleSnapshot(previous, current physics.VehicleSnapshot, alpha
 	}
 
 	return snapshot
+}
+
+func interpolateKinematicDebug(previous, current physics.KinematicDebug, alpha float32) physics.KinematicDebug {
+	contactNormal := geom.LerpVec3(previous.ContactNormal, current.ContactNormal, alpha)
+	if contactNormal.LengthSquared() > 0 {
+		contactNormal = contactNormal.Normalize()
+	}
+
+	groundNormal := geom.LerpVec3(previous.GroundNormal, current.GroundNormal, alpha)
+	if groundNormal.LengthSquared() > 0 {
+		groundNormal = groundNormal.Normalize()
+	}
+
+	return physics.KinematicDebug{
+		Grounded:      current.Grounded,
+		ContactCount:  current.ContactCount,
+		Substeps:      current.Substeps,
+		ContactNormal: contactNormal,
+		GroundNormal:  groundNormal,
+	}
 }
 
 func interpolateWheelSnapshot(previous, current physics.WheelSnapshot, alpha float32) physics.WheelSnapshot {

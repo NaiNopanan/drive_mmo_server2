@@ -14,26 +14,9 @@ const (
 
 // Step จะขยับโลกไปข้างหน้า 1 tick ตาม fixed dt ของ world
 func (w *PhysicsWorld) Step(input DriveInput) {
-	previous := w.player
 	w.player.BodyHitMap = false
 	w.player.OBBCCD = OBBCCDDebug{}
-	w.player = simulateVehicle(w.player, input, w.config.FixedDT)
-	w.player = w.applyWorldConstraints(w.player)
-	w.player = w.applyGrounding(w.player, w.config.FixedDT)
-	w.player = w.applyBodyCapsuleCCDWithSlide(previous, w.player, w.config.FixedDT)
-
-	for iteration := 0; iteration < 3; iteration++ {
-		hit, intersects := w.queryBodyCapsuleMapHit(w.player)
-		if !intersects {
-			break
-		}
-
-		w.player.Position.X += hit.Normal.X * hit.Penetration
-		w.player.Position.Z += hit.Normal.Z * hit.Penetration
-		w.player.Height += hit.Normal.Y * hit.Penetration
-		w.player.BodyHitMap = true
-	}
-	w.player = w.refreshGroundingAfterCollision(w.player)
+	w.player = w.stepVehicleKinematic(w.player, input, w.config.FixedDT)
 	w.player.LastSafePos = w.player.Position
 	w.tick++
 }
@@ -63,6 +46,13 @@ func (w *PhysicsWorld) refreshGroundingAfterCollision(vehicle VehicleBody) Vehic
 
 // simulateVehicle เป็นฟิสิกส์แบบ arcade ง่าย ๆ สำหรับใช้เป็นฐานเริ่มระบบรถใหม่
 func simulateVehicle(vehicle VehicleBody, input DriveInput, dt float32) VehicleBody {
+	vehicle = applyVehicleControls(vehicle, input, dt)
+	vehicle.Position = vehicle.Position.Add(vehicle.Velocity.MulScalar(dt))
+	vehicle.Speed = vehicle.Velocity.Length()
+	return vehicle
+}
+
+func applyVehicleControls(vehicle VehicleBody, input DriveInput, dt float32) VehicleBody {
 	params := vehicle.Params
 
 	forward := geom.FromHeading(vehicle.Heading)
@@ -120,7 +110,6 @@ func simulateVehicle(vehicle VehicleBody, input DriveInput, dt float32) VehicleB
 	forward = geom.FromHeading(vehicle.Heading)
 	right = geom.Planar(-forward.Z, forward.X)
 	vehicle.Velocity = forward.MulScalar(forwardSpeed).Add(right.MulScalar(lateralSpeed))
-	vehicle.Position = vehicle.Position.Add(vehicle.Velocity.MulScalar(dt))
 	vehicle.Speed = vehicle.Velocity.Length()
 
 	return vehicle

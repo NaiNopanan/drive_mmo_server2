@@ -15,19 +15,22 @@ type PhysicsWorld struct {
 
 func NewWorld(config WorldConfig) *PhysicsWorld {
 	spawnGroundHeight := querySpawnGroundHeight(config.StaticMesh, config.PlayerSpawn)
+	player := VehicleBody{
+		ID:           "player-1",
+		Position:     config.PlayerSpawn,
+		Height:       spawnGroundHeight + 3,
+		GroundHeight: spawnGroundHeight,
+		VerticalVel:  0,
+		SupportState: SupportStateFalling,
+		LastSafePos:  config.PlayerSpawn,
+		Params:       DefaultVehicleParams(),
+	}
+	player.Wheels = wheelDebugSnapshot(player)
 
 	return &PhysicsWorld{
 		config:     config,
 		staticMesh: config.StaticMesh,
-		player: VehicleBody{
-			ID:           "player-1",
-			Position:     config.PlayerSpawn,
-			Height:       spawnGroundHeight + 3,
-			GroundHeight: spawnGroundHeight,
-			VerticalVel:  0,
-			LastSafePos:  config.PlayerSpawn,
-			Params:       DefaultVehicleParams(),
-		},
+		player:     player,
 	}
 }
 
@@ -61,8 +64,10 @@ func snapshotFromVehicle(vehicle VehicleBody, isPlayer bool) VehicleSnapshot {
 		Speed:              vehicle.Speed,
 		Height:             vehicle.Height,
 		GroundHeight:       vehicle.GroundHeight,
+		VerticalVel:        vehicle.VerticalVel,
 		BodyHitMap:         vehicle.BodyHitMap,
 		OBBCCD:             vehicle.OBBCCD,
+		Kinematic:          vehicle.Kinematic,
 		SupportState:       vehicle.SupportState,
 		SupportHits:        vehicle.SupportHits,
 		Length:             vehicle.Params.BodyLength,
