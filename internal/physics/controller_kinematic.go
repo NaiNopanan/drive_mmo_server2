@@ -6,7 +6,8 @@ const (
 	vehicleKinematicSubsteps           = 4
 	vehicleCollisionIterations         = 6
 	vehicleCollisionSkin       float32 = 0.001
-	vehicleGroundNormalMinY    float32 = 0.55
+	vehicleGroundNormalMinY    float32 = 0.35
+	vehicleGroundSnapDistance  float32 = 0.35
 	vehicleGroundStickSpeed    float32 = 2.4
 )
 
@@ -17,6 +18,13 @@ type kinematicContactState struct {
 	ContactCount  int
 	ContactNormal geom.Vec3
 	GroundNormal  geom.Vec3
+}
+
+type groundProbeResult struct {
+	Hit    bool
+	Origin geom.Vec3
+	Point  geom.Vec3
+	Normal geom.Vec3
 }
 
 func (w *PhysicsWorld) stepVehicleKinematic(vehicle VehicleBody, input DriveInput, dt float32) VehicleBody {
@@ -30,23 +38,54 @@ func (w *PhysicsWorld) stepVehicleKinematic(vehicle VehicleBody, input DriveInpu
 	debug := KinematicDebug{
 		Grounded: grounded,
 		Substeps: vehicleKinematicSubsteps,
+		Throttle: input.Throttle,
+		Brake:    input.Brake,
+		Steering: input.Steering,
+	}
+	groundNormal := vehicle.Kinematic.GroundNormal
+	if groundNormal.LengthSquared() == 0 {
+		groundNormal = geom.V3(0, 1, 0)
 	}
 
 	for step := 0; step < vehicleKinematicSubsteps; step++ {
 		vehicle = applyVehicleControls(vehicle, input, subDT)
+		forward, right, _ := vehicleAxes(vehicle.Heading, 0, 0)
+		debug.ForwardVector = forward
+		debug.RightVector = right
 
+		moveVelocity := geom.V3(vehicle.Velocity.X, 0, vehicle.Velocity.Z)
+		debug.PlanarVelocity = moveVelocity
 		if grounded {
+			if lookAheadProbe := w.probeVehicleGround(vehicle, vehicle.Params.BodyLength*0.45); lookAheadProbe.Hit {
+				debug.LookAheadHit = true
+				debug.LookAheadOrigin = lookAheadProbe.Origin
+				debug.LookAheadPoint = lookAheadProbe.Point
+				debug.LookAheadNormal = lookAheadProbe.Normal
+				groundNormal = lookAheadProbe.Normal
+			}
+			moveVelocity = projectVelocityOnPlane(moveVelocity, groundNormal)
 			vehicle.VerticalVel = -vehicleGroundStickSpeed
 		} else {
 			vehicle.VerticalVel -= spawnDropGravity * subDT
+			groundNormal = geom.V3(0, 1, 0)
 		}
 
-		moveDelta := geom.V3(
-			vehicle.Velocity.X*subDT,
-			vehicle.VerticalVel*subDT,
-			vehicle.Velocity.Z*subDT,
-		)
+		moveDelta := moveVelocity.MulScalar(subDT).Add(geom.V3(0, vehicle.VerticalVel*subDT, 0))
+		debug.ProjectedVelocity = moveVelocity
+		debug.MoveDelta = moveDelta
 		vehicle, contactState = w.moveVehicleKinematic(vehicle, moveDelta)
+		if snappedVehicle, snappedState, snapped := w.trySnapVehicleToGround(vehicle); snapped && snappedVehicle.Height >= vehicle.Height {
+			vehicle = snappedVehicle
+			contactState.Grounded = snappedState.Grounded
+			contactState.GroundHeight = snappedState.GroundHeight
+			if snappedState.SupportHits > contactState.SupportHits {
+				contactState.SupportHits = snappedState.SupportHits
+			}
+			if snappedState.GroundNormal.LengthSquared() > 0 {
+				contactState.GroundNormal = snappedState.GroundNormal
+			}
+			debug.SnapApplied = true
+		}
 		grounded = contactState.Grounded
 		debug.Grounded = grounded
 		debug.ContactCount += contactState.ContactCount
@@ -55,6 +94,13 @@ func (w *PhysicsWorld) stepVehicleKinematic(vehicle VehicleBody, input DriveInpu
 		}
 		if contactState.GroundNormal.LengthSquared() > 0 {
 			debug.GroundNormal = contactState.GroundNormal
+			groundNormal = contactState.GroundNormal
+		}
+		if groundProbe := w.probeVehicleGround(vehicle, 0); groundProbe.Hit {
+			debug.GroundProbeHit = true
+			debug.GroundProbeOrigin = groundProbe.Origin
+			debug.GroundProbePoint = groundProbe.Point
+			debug.GroundProbeNormal = groundProbe.Normal
 		}
 		if grounded {
 			vehicle.VerticalVel = 0
@@ -76,8 +122,7 @@ func (w *PhysicsWorld) stepVehicleKinematic(vehicle VehicleBody, input DriveInpu
 		vehicle.GroundHeight = vehicle.Height
 	}
 
-	vehicle.Pitch = 0
-	vehicle.Roll = 0
+	vehicle = applyVehicleGroundTilt(vehicle, contactState)
 	vehicle.Wheels = wheelDebugSnapshot(vehicle)
 	vehicle.Speed = vehicle.Velocity.Length()
 	vehicle.Kinematic = debug
@@ -103,7 +148,6 @@ func (w *PhysicsWorld) moveVehicleKinematic(vehicle VehicleBody, delta geom.Vec3
 		vehicle.Position.X += hit.Normal.X * push
 		vehicle.Position.Z += hit.Normal.Z * push
 		vehicle.Height += hit.Normal.Y * push
-		vehicle = slideBodyVelocityAgainstNormal(vehicle, hit.Normal)
 		vehicle.BodyHitMap = true
 		contactState.ContactCount++
 		contactState.ContactNormal = hit.Normal
@@ -113,6 +157,11 @@ func (w *PhysicsWorld) moveVehicleKinematic(vehicle VehicleBody, delta geom.Vec3
 			contactState.SupportHits++
 			contactState.GroundHeight = maxf(contactState.GroundHeight, vehicle.Height)
 			groundNormal = groundNormal.Add(hit.Normal)
+			if vehicle.VerticalVel < 0 {
+				vehicle.VerticalVel = 0
+			}
+		} else {
+			vehicle = slideBodyVelocityAgainstNormal(vehicle, hit.Normal)
 		}
 	}
 
@@ -120,16 +169,94 @@ func (w *PhysicsWorld) moveVehicleKinematic(vehicle VehicleBody, delta geom.Vec3
 		contactState.GroundNormal = groundNormal.Normalize()
 	}
 	if !contactState.Grounded && groundNormal.LengthSquared() == 0 {
-		supportHit, intersects := w.queryBodyCapsuleMapHit(vehicle)
-		if intersects && supportHit.Normal.Y >= vehicleGroundNormalMinY {
-			contactState.Grounded = true
-			contactState.SupportHits = 1
-			contactState.GroundHeight = vehicle.Height
-			contactState.GroundNormal = supportHit.Normal.Normalize()
+		snappedVehicle, snappedState, snapped := w.trySnapVehicleToGround(vehicle)
+		if snapped {
+			vehicle = snappedVehicle
+			contactState = snappedState
 		}
 	}
 
 	return vehicle, contactState
+}
+
+func (w *PhysicsWorld) trySnapVehicleToGround(vehicle VehicleBody) (VehicleBody, kinematicContactState, bool) {
+	groundProbe := w.probeVehicleGround(vehicle, 0)
+	if !groundProbe.Hit || groundProbe.Normal.Y < vehicleGroundNormalMinY {
+		return vehicle, kinematicContactState{}, false
+	}
+
+	targetHeight := groundProbe.Point.Y
+	heightDelta := targetHeight - vehicle.Height
+	if heightDelta > 0 {
+		vehicle.Height = targetHeight
+		return vehicle, kinematicContactState{
+			Grounded:     true,
+			GroundHeight: vehicle.Height,
+			SupportHits:  1,
+			GroundNormal: groundProbe.Normal,
+		}, true
+	}
+	if absf(heightDelta) > vehicleGroundSnapDistance*2 {
+		return vehicle, kinematicContactState{}, false
+	}
+
+	vehicle.Height = targetHeight
+	return vehicle, kinematicContactState{
+		Grounded:     true,
+		GroundHeight: vehicle.Height,
+		SupportHits:  1,
+		GroundNormal: groundProbe.Normal,
+	}, true
+}
+
+func applyVehicleGroundTilt(vehicle VehicleBody, contactState kinematicContactState) VehicleBody {
+	targetPitch := float32(0)
+	targetRoll := float32(0)
+	smooth := float32(0.28)
+
+	if contactState.Grounded && contactState.GroundNormal.LengthSquared() > 0 {
+		targetPitch, targetRoll = tiltFromNormal(vehicle.Heading, contactState.GroundNormal.Normalize())
+		targetPitch = clamp(targetPitch, -0.6, 0.6)
+		targetRoll = clamp(targetRoll, -0.6, 0.6)
+		smooth = 0.35
+	}
+
+	vehicle.Pitch += (targetPitch - vehicle.Pitch) * smooth
+	vehicle.Roll += (targetRoll - vehicle.Roll) * smooth
+	return vehicle
+}
+
+func (w *PhysicsWorld) probeVehicleGround(vehicle VehicleBody, forwardOffset float32) groundProbeResult {
+	probePosition := vehicle.Position.Add(geom.FromHeading(vehicle.Heading).MulScalar(forwardOffset))
+	originY := vehicle.Height + vehicle.Params.BodyHeight + vehicleGroundSnapDistance
+	origin := geom.V3(
+		probePosition.X,
+		originY,
+		probePosition.Z,
+	)
+	maxDistance := vehicle.Params.BodyHeight + vehicleGroundSnapDistance*4
+	hit := w.queryGroundHit(origin, maxDistance)
+	if !hit.Hit {
+		return groundProbeResult{
+			Origin: origin,
+		}
+	}
+
+	return groundProbeResult{
+		Hit:    true,
+		Origin: origin,
+		Point:  hit.Point,
+		Normal: hit.Normal.Normalize(),
+	}
+}
+
+func projectVelocityOnPlane(velocity geom.Vec3, normal geom.Vec3) geom.Vec3 {
+	if normal.LengthSquared() == 0 {
+		return velocity
+	}
+
+	normal = normal.Normalize()
+	return velocity.Sub(normal.MulScalar(velocity.Dot(normal)))
 }
 
 func wheelDebugSnapshot(vehicle VehicleBody) [wheelCount]WheelState {

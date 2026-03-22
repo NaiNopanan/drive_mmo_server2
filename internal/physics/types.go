@@ -114,11 +114,28 @@ type OBBCCDDebug struct {
 }
 
 type KinematicDebug struct {
-	Grounded      bool
-	ContactCount  int
-	Substeps      int
-	ContactNormal geom.Vec3
-	GroundNormal  geom.Vec3
+	Grounded          bool
+	ContactCount      int
+	Substeps          int
+	Throttle          float32
+	Brake             float32
+	Steering          float32
+	ForwardVector     geom.Vec3
+	RightVector       geom.Vec3
+	PlanarVelocity    geom.Vec3
+	ProjectedVelocity geom.Vec3
+	MoveDelta         geom.Vec3
+	ContactNormal     geom.Vec3
+	GroundNormal      geom.Vec3
+	GroundProbeHit    bool
+	GroundProbeOrigin geom.Vec3
+	GroundProbePoint  geom.Vec3
+	GroundProbeNormal geom.Vec3
+	LookAheadHit      bool
+	LookAheadOrigin   geom.Vec3
+	LookAheadPoint    geom.Vec3
+	LookAheadNormal   geom.Vec3
+	SnapApplied       bool
 }
 
 // VehicleSnapshot คือข้อมูลอ่านอย่างเดียวสำหรับ viewer

@@ -68,10 +68,116 @@ func TestStepVehicleKinematicSlidesAlongWall(t *testing.T) {
 	}
 }
 
+func TestStepVehicleKinematicClimbsSteepSlope(t *testing.T) {
+	world := PhysicsWorld{
+		config: WorldConfig{
+			FixedDT:     1.0 / 20.0,
+			WorldBounds: geom.NewAABB(-20, -20, 20, 20),
+		},
+		staticMesh: combineStaticMeshes(testFlatFloorMesh(), testSteepSlopeMesh()),
+		player: VehicleBody{
+			Position:     geom.Planar(-4.5, 0),
+			Height:       0,
+			Heading:      0,
+			SupportState: SupportStateStable,
+			SupportHits:  1,
+			Kinematic: KinematicDebug{
+				Grounded:     true,
+				GroundNormal: geom.V3(0, 1, 0),
+			},
+			Params: DefaultVehicleParams(),
+		},
+	}
+
+	for tick := 0; tick < 40; tick++ {
+		world.Step(DriveInput{Throttle: 1})
+	}
+
+	if world.player.Position.X <= -0.5 {
+		t.Fatalf("expected player to progress onto slope, got position %+v", world.player.Position)
+	}
+	if world.player.Height <= 1.0 {
+		t.Fatalf("expected player to gain height while climbing slope, got height %f", world.player.Height)
+	}
+	if !world.player.Kinematic.Grounded {
+		t.Fatal("expected player to remain grounded while climbing walkable steep slope")
+	}
+	if absf(world.player.Pitch) < 0.05 {
+		t.Fatalf("expected player body to tilt with slope, got pitch %f", world.player.Pitch)
+	}
+}
+
+func TestStepVehicleKinematicDoesNotSnapToBridgeAbove(t *testing.T) {
+	world := PhysicsWorld{
+		config: WorldConfig{
+			FixedDT:     1.0 / 20.0,
+			WorldBounds: geom.NewAABB(-20, -20, 20, 20),
+		},
+		staticMesh: combineStaticMeshes(testFlatFloorMesh(), testBridgeDeckMesh()),
+		player: VehicleBody{
+			Position:     geom.Planar(0, 0),
+			Height:       0,
+			Heading:      0,
+			SupportState: SupportStateStable,
+			SupportHits:  1,
+			Kinematic: KinematicDebug{
+				Grounded:     true,
+				GroundNormal: geom.V3(0, 1, 0),
+			},
+			Params: DefaultVehicleParams(),
+		},
+	}
+
+	for tick := 0; tick < 20; tick++ {
+		world.Step(DriveInput{Throttle: 1})
+	}
+
+	if world.player.Height > 0.5 {
+		t.Fatalf("expected player to remain under the bridge deck, got height %f", world.player.Height)
+	}
+	if !world.player.Kinematic.Grounded {
+		t.Fatal("expected player to stay grounded on road under bridge")
+	}
+}
+
 func combineStaticMeshes(meshes ...worldmesh.StaticMesh) worldmesh.StaticMesh {
 	combined := worldmesh.StaticMesh{}
 	for _, mesh := range meshes {
 		combined.Triangles = append(combined.Triangles, mesh.Triangles...)
 	}
 	return combined
+}
+
+func testSteepSlopeMesh() worldmesh.StaticMesh {
+	return worldmesh.StaticMesh{
+		Triangles: []worldmesh.Triangle{
+			{
+				A: geom.V3(-2, 0, -4),
+				B: geom.V3(-2, 0, 4),
+				C: geom.V3(2, 8, -4),
+			},
+			{
+				A: geom.V3(-2, 0, 4),
+				B: geom.V3(2, 8, 4),
+				C: geom.V3(2, 8, -4),
+			},
+		},
+	}
+}
+
+func testBridgeDeckMesh() worldmesh.StaticMesh {
+	return worldmesh.StaticMesh{
+		Triangles: []worldmesh.Triangle{
+			{
+				A: geom.V3(-8, 4, -6),
+				B: geom.V3(8, 4, -6),
+				C: geom.V3(-8, 4, 6),
+			},
+			{
+				A: geom.V3(8, 4, -6),
+				B: geom.V3(8, 4, 6),
+				C: geom.V3(-8, 4, 6),
+			},
+		},
+	}
 }

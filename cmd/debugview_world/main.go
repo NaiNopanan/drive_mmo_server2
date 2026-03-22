@@ -343,27 +343,51 @@ func drawQuad(a, b, c, d rl.Vector3, color rl.Color) {
 
 func drawKinematicDebug(vehicle physics.VehicleSnapshot) {
 	center := capsuleCenter(vehicle.Position, vehicle.Height, vehicle.Heading, vehicle.Pitch, vehicle.Roll, vehicle.ColliderRadius)
+	drawDebugVector(center, vehicle.Kinematic.ForwardVector, 1.8, rl.NewColor(255, 255, 255, 255))
+	drawDebugVector(center, vehicle.Kinematic.RightVector, 1.2, rl.NewColor(192, 192, 192, 220))
+	drawDebugVector(center, vehicle.Kinematic.PlanarVelocity, 0.16, rl.NewColor(255, 96, 96, 255))
+	drawDebugVector(center, vehicle.Kinematic.ProjectedVelocity, 0.16, rl.NewColor(96, 224, 255, 255))
+	drawDebugVector(center, vehicle.Kinematic.MoveDelta, 8.0, rl.NewColor(255, 210, 96, 255))
 
 	if vehicle.Kinematic.Grounded && vehicle.Kinematic.GroundNormal.LengthSquared() > 0 {
-		groundEnd := rl.Vector3Add(center, rl.NewVector3(
-			vehicle.Kinematic.GroundNormal.X*1.2,
-			vehicle.Kinematic.GroundNormal.Y*1.2,
-			vehicle.Kinematic.GroundNormal.Z*1.2,
-		))
-		rl.DrawLine3D(center, groundEnd, rl.NewColor(120, 255, 170, 255))
-		rl.DrawSphere(groundEnd, 0.05, rl.NewColor(120, 255, 170, 255))
+		drawDebugVector(center, vehicle.Kinematic.GroundNormal, 1.2, rl.NewColor(120, 255, 170, 255))
 	}
 
 	if vehicle.Kinematic.ContactCount > 0 && vehicle.Kinematic.ContactNormal.LengthSquared() > 0 {
-		contactEnd := rl.Vector3Add(center, rl.NewVector3(
-			vehicle.Kinematic.ContactNormal.X*1.4,
-			vehicle.Kinematic.ContactNormal.Y*1.4,
-			vehicle.Kinematic.ContactNormal.Z*1.4,
-		))
 		rl.DrawSphere(center, 0.06, rl.NewColor(255, 232, 96, 255))
-		rl.DrawLine3D(center, contactEnd, rl.NewColor(255, 96, 96, 255))
-		rl.DrawSphere(contactEnd, 0.05, rl.NewColor(255, 96, 96, 255))
+		drawDebugVector(center, vehicle.Kinematic.ContactNormal, 1.4, rl.NewColor(255, 96, 96, 255))
 	}
+
+	if vehicle.Kinematic.GroundProbeHit {
+		origin := toRenderVector3(vehicle.Kinematic.GroundProbeOrigin)
+		point := toRenderVector3(vehicle.Kinematic.GroundProbePoint)
+		rl.DrawLine3D(origin, point, rl.NewColor(96, 255, 220, 220))
+		rl.DrawSphere(point, 0.04, rl.NewColor(96, 255, 220, 255))
+		drawDebugVector(point, vehicle.Kinematic.GroundProbeNormal, 0.9, rl.NewColor(96, 255, 220, 255))
+	}
+
+	if vehicle.Kinematic.LookAheadHit {
+		origin := toRenderVector3(vehicle.Kinematic.LookAheadOrigin)
+		point := toRenderVector3(vehicle.Kinematic.LookAheadPoint)
+		rl.DrawLine3D(origin, point, rl.NewColor(96, 160, 255, 220))
+		rl.DrawSphere(point, 0.04, rl.NewColor(96, 160, 255, 255))
+		drawDebugVector(point, vehicle.Kinematic.LookAheadNormal, 0.9, rl.NewColor(96, 160, 255, 255))
+	}
+
+	if vehicle.Kinematic.SnapApplied && vehicle.Kinematic.GroundProbeHit {
+		point := toRenderVector3(vehicle.Kinematic.GroundProbePoint)
+		rl.DrawSphere(point, 0.08, rl.NewColor(255, 240, 96, 120))
+	}
+}
+
+func drawDebugVector(origin rl.Vector3, vector geom.Vec3, scale float32, color rl.Color) {
+	if vector.LengthSquared() == 0 {
+		return
+	}
+
+	end := rl.Vector3Add(origin, rl.NewVector3(vector.X*scale, vector.Y*scale, vector.Z*scale))
+	rl.DrawLine3D(origin, end, color)
+	rl.DrawSphere(end, 0.04, color)
 }
 
 func chassisCorners(vehicle physics.VehicleSnapshot) [8]rl.Vector3 {
@@ -440,11 +464,14 @@ func drawHUD(snapshot physics.WorldSnapshot, paused bool, mode renderMode, camer
 		fmt.Sprintf("height: %.2fm / ground: %.2fm", snapshot.Player.Height, snapshot.Player.GroundHeight),
 		fmt.Sprintf("grounded: %t", snapshot.Player.Kinematic.Grounded),
 		fmt.Sprintf("support: %s (%d contacts)", snapshot.Player.SupportState, snapshot.Player.Kinematic.ContactCount),
+		fmt.Sprintf("input: throttle=%.1f brake=%.1f steer=%.1f", snapshot.Player.Kinematic.Throttle, snapshot.Player.Kinematic.Brake, snapshot.Player.Kinematic.Steering),
 		fmt.Sprintf("heading: %.2f", snapshot.Player.Heading),
+		fmt.Sprintf("pitch/roll: %.2f / %.2f", snapshot.Player.Pitch, snapshot.Player.Roll),
 		fmt.Sprintf("position: [%.1f, %.1f]", snapshot.Player.Position.X, snapshot.Player.Position.Z),
 		fmt.Sprintf("world triangles: %d", len(snapshot.StaticMesh.Triangles)),
 		fmt.Sprintf("world size: %.1fm x %.1fm", snapshot.StaticMesh.Max.X-snapshot.StaticMesh.Min.X, snapshot.StaticMesh.Max.Z-snapshot.StaticMesh.Min.Z),
 	}
+	lines = append(lines, "vectors: white=forward gray=right red=planar cyan=projected orange=move")
 	if snapshot.Player.Kinematic.ContactCount > 0 {
 		lines = append(lines, fmt.Sprintf(
 			"contact normal: [%.2f %.2f %.2f]",
@@ -465,6 +492,29 @@ func drawHUD(snapshot physics.WorldSnapshot, paused bool, mode renderMode, camer
 	} else {
 		lines = append(lines, "ground normal: airborne")
 	}
+	if snapshot.Player.Kinematic.GroundProbeHit {
+		lines = append(lines, fmt.Sprintf(
+			"ground probe: hit y=%.2f n=[%.2f %.2f %.2f]",
+			snapshot.Player.Kinematic.GroundProbePoint.Y,
+			snapshot.Player.Kinematic.GroundProbeNormal.X,
+			snapshot.Player.Kinematic.GroundProbeNormal.Y,
+			snapshot.Player.Kinematic.GroundProbeNormal.Z,
+		))
+	} else {
+		lines = append(lines, "ground probe: miss")
+	}
+	if snapshot.Player.Kinematic.LookAheadHit {
+		lines = append(lines, fmt.Sprintf(
+			"look-ahead: hit y=%.2f n=[%.2f %.2f %.2f]",
+			snapshot.Player.Kinematic.LookAheadPoint.Y,
+			snapshot.Player.Kinematic.LookAheadNormal.X,
+			snapshot.Player.Kinematic.LookAheadNormal.Y,
+			snapshot.Player.Kinematic.LookAheadNormal.Z,
+		))
+	} else {
+		lines = append(lines, "look-ahead: miss")
+	}
+	lines = append(lines, fmt.Sprintf("snap applied: %t", snapshot.Player.Kinematic.SnapApplied))
 
 	state := "running"
 	if paused {
@@ -598,12 +648,39 @@ func interpolateKinematicDebug(previous, current physics.KinematicDebug, alpha f
 		groundNormal = groundNormal.Normalize()
 	}
 
+	groundProbeNormal := geom.LerpVec3(previous.GroundProbeNormal, current.GroundProbeNormal, alpha)
+	if groundProbeNormal.LengthSquared() > 0 {
+		groundProbeNormal = groundProbeNormal.Normalize()
+	}
+
+	lookAheadNormal := geom.LerpVec3(previous.LookAheadNormal, current.LookAheadNormal, alpha)
+	if lookAheadNormal.LengthSquared() > 0 {
+		lookAheadNormal = lookAheadNormal.Normalize()
+	}
+
 	return physics.KinematicDebug{
-		Grounded:      current.Grounded,
-		ContactCount:  current.ContactCount,
-		Substeps:      current.Substeps,
-		ContactNormal: contactNormal,
-		GroundNormal:  groundNormal,
+		Grounded:          current.Grounded,
+		ContactCount:      current.ContactCount,
+		Substeps:          current.Substeps,
+		Throttle:          current.Throttle,
+		Brake:             current.Brake,
+		Steering:          current.Steering,
+		ForwardVector:     geom.LerpVec3(previous.ForwardVector, current.ForwardVector, alpha),
+		RightVector:       geom.LerpVec3(previous.RightVector, current.RightVector, alpha),
+		PlanarVelocity:    geom.LerpVec3(previous.PlanarVelocity, current.PlanarVelocity, alpha),
+		ProjectedVelocity: geom.LerpVec3(previous.ProjectedVelocity, current.ProjectedVelocity, alpha),
+		MoveDelta:         geom.LerpVec3(previous.MoveDelta, current.MoveDelta, alpha),
+		ContactNormal:     contactNormal,
+		GroundNormal:      groundNormal,
+		GroundProbeHit:    current.GroundProbeHit,
+		GroundProbeOrigin: geom.LerpVec3(previous.GroundProbeOrigin, current.GroundProbeOrigin, alpha),
+		GroundProbePoint:  geom.LerpVec3(previous.GroundProbePoint, current.GroundProbePoint, alpha),
+		GroundProbeNormal: groundProbeNormal,
+		LookAheadHit:      current.LookAheadHit,
+		LookAheadOrigin:   geom.LerpVec3(previous.LookAheadOrigin, current.LookAheadOrigin, alpha),
+		LookAheadPoint:    geom.LerpVec3(previous.LookAheadPoint, current.LookAheadPoint, alpha),
+		LookAheadNormal:   lookAheadNormal,
+		SnapApplied:       current.SnapApplied,
 	}
 }
 
