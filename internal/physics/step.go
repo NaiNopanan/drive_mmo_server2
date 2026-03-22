@@ -17,34 +17,7 @@ func (w *PhysicsWorld) Step(input DriveInput) {
 	w.player = simulateVehicle(w.player, input, w.config.FixedDT)
 	w.player = w.applyWorldConstraints(w.player)
 	w.player = w.applyGrounding(w.player, w.config.FixedDT)
-
-	ccdHit, ccdIntersects := w.queryBodyOBBMapCCD(previous, w.player)
-	if ccdIntersects {
-		contactPosition := geom.LerpPlanar(previous.Position, w.player.Position, ccdHit.Time)
-		contactHeight := lerpFloat32(previous.Height, w.player.Height, ccdHit.Time)
-		contactHeading := lerpAngle(previous.Heading, w.player.Heading, ccdHit.Time)
-		contactPitch := lerpFloat32(previous.Pitch, w.player.Pitch, ccdHit.Time)
-		contactRoll := lerpFloat32(previous.Roll, w.player.Roll, ccdHit.Time)
-		w.player.OBBCCD = OBBCCDDebug{
-			Hit:      true,
-			Time:     ccdHit.Time,
-			Position: contactPosition,
-			Height:   contactHeight,
-			Heading:  contactHeading,
-			Pitch:    contactPitch,
-			Roll:     contactRoll,
-			Normal:   ccdHit.Normal,
-		}
-		w.player.Position = contactPosition
-		w.player.Height = contactHeight
-		w.player.Heading = contactHeading
-		w.player.Pitch = contactPitch
-		w.player.Roll = contactRoll
-		w.player.Position.X += ccdHit.Normal.X * bodyOBBCCDSkin
-		w.player.Position.Z += ccdHit.Normal.Z * bodyOBBCCDSkin
-		w.player.Height += ccdHit.Normal.Y * bodyOBBCCDSkin
-		w.player.BodyHitMap = true
-	}
+	w.player = w.applyBodyOBBCCDWithSlide(previous, w.player, w.config.FixedDT)
 
 	for iteration := 0; iteration < 3; iteration++ {
 		hit, intersects := w.queryBodyOBBMapHit(w.player)

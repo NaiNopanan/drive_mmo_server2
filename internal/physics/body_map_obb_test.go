@@ -121,6 +121,59 @@ func TestQueryBodyOBBMapCCDHitsSideWall(t *testing.T) {
 	}
 }
 
+func TestSlideVelocityAgainstNormalPreservesTangent(t *testing.T) {
+	velocity := geom.V3(6, 0, 2)
+	normal := geom.V3(-1, 0, 0)
+
+	sliding := slideVelocityAgainstNormal(velocity, normal)
+	if absf(sliding.X) > 0.001 {
+		t.Fatalf("expected wall-normal speed to be removed, got %+v", sliding)
+	}
+	if sliding.Z < 1.99 || sliding.Z > 2.01 {
+		t.Fatalf("expected tangent speed to be preserved, got %+v", sliding)
+	}
+}
+
+func TestSlideVelocityAgainstNormalHandlesVerticalComponent(t *testing.T) {
+	velocity := geom.V3(3, -4, 0)
+	normal := geom.V3(0, 1, 0)
+
+	sliding := slideVelocityAgainstNormal(velocity, normal)
+	if absf(sliding.Y) > 0.001 {
+		t.Fatalf("expected floor-normal speed to be removed, got %+v", sliding)
+	}
+	if sliding.X < 2.99 || sliding.X > 3.01 {
+		t.Fatalf("expected tangent speed to be preserved, got %+v", sliding)
+	}
+}
+
+func TestApplyBodyOBBCCDWithSlideMovesAlongWall(t *testing.T) {
+	world := PhysicsWorld{
+		staticMesh: testWallMesh(),
+	}
+	params := DefaultVehicleParams()
+	previous := VehicleBody{
+		Position: geom.Planar(-5, 0),
+		Height:   0,
+		Params:   params,
+	}
+	current := previous
+	current.Position = geom.Planar(2, 2)
+	current.Velocity = geom.Planar(7, 2)
+	current.Speed = current.Velocity.Length()
+
+	resolved := world.applyBodyOBBCCDWithSlide(previous, current, 1)
+	if !resolved.BodyHitMap {
+		t.Fatal("expected CCD+slide to register map hit")
+	}
+	if resolved.Position.Z <= 0.5 {
+		t.Fatalf("expected remaining time solve to advance along wall, got position %+v", resolved.Position)
+	}
+	if world.bodyOBBIntersectsMap(resolved) {
+		t.Fatal("expected resolved vehicle to stay out of wall")
+	}
+}
+
 func testWallMesh() worldmesh.StaticMesh {
 	return worldmesh.StaticMesh{
 		Triangles: []worldmesh.Triangle{
