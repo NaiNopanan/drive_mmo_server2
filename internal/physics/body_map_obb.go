@@ -15,23 +15,40 @@ type bodyOBB struct {
 	halfExtents [3]float32
 }
 
+type bodyMapHit struct {
+	Normal      geom.Vec3
+	Penetration float32
+}
+
 func (w *PhysicsWorld) bodyOBBIntersectsMap(vehicle VehicleBody) bool {
+	_, hit := w.queryBodyOBBMapHit(vehicle)
+	return hit
+}
+
+func (w *PhysicsWorld) queryBodyOBBMapHit(vehicle VehicleBody) (bodyMapHit, bool) {
 	if len(w.staticMesh.Triangles) == 0 {
-		return false
+		return bodyMapHit{}, false
 	}
 
 	obb := bodyOBBFromVehicle(vehicle)
 	minBounds, maxBounds := bodyOBBAABB(obb)
+	bestHit := bodyMapHit{}
+	hasHit := false
 	for _, triangle := range w.staticMesh.Triangles {
 		if !triangleCouldHitBodyOBB(minBounds, maxBounds, triangle) {
 			continue
 		}
-		if obbIntersectsTriangle(obb, triangle) {
-			return true
+		hit, intersects := obbIntersectsTriangle(obb, triangle)
+		if !intersects {
+			continue
+		}
+		if !hasHit || hit.Penetration > bestHit.Penetration {
+			bestHit = hit
+			hasHit = true
 		}
 	}
 
-	return false
+	return bestHit, hasHit
 }
 
 func bodyOBBFromVehicle(vehicle VehicleBody) bodyOBB {
@@ -95,14 +112,30 @@ func triangleCouldHitBodyOBB(minBounds, maxBounds geom.Vec3, triangle worldmesh.
 		maxZ < minBounds.Z || minZ > maxBounds.Z)
 }
 
-func obbIntersectsTriangle(obb bodyOBB, triangle worldmesh.Triangle) bool {
+func obbIntersectsTriangle(obb bodyOBB, triangle worldmesh.Triangle) (bodyMapHit, bool) {
 	vertices := [3]geom.Vec3{
 		toOBBLocalPoint(obb, triangle.A),
 		toOBBLocalPoint(obb, triangle.B),
 		toOBBLocalPoint(obb, triangle.C),
 	}
 
-	return triangleBoxOverlap(vertices, obb.halfExtents)
+	localHit, intersects := triangleBoxOverlap(vertices, obb.halfExtents)
+	if !intersects {
+		return bodyMapHit{}, false
+	}
+
+	worldNormal := obb.axes[0].MulScalar(localHit.Normal.X).
+		Add(obb.axes[1].MulScalar(localHit.Normal.Y)).
+		Add(obb.axes[2].MulScalar(localHit.Normal.Z)).
+		Normalize()
+	if worldNormal.LengthSquared() <= obbTriangleEpsilon {
+		return bodyMapHit{}, false
+	}
+
+	return bodyMapHit{
+		Normal:      worldNormal,
+		Penetration: localHit.Penetration,
+	}, true
 }
 
 func toOBBLocalPoint(obb bodyOBB, point geom.Vec3) geom.Vec3 {
@@ -114,7 +147,7 @@ func toOBBLocalPoint(obb bodyOBB, point geom.Vec3) geom.Vec3 {
 	)
 }
 
-func triangleBoxOverlap(vertices [3]geom.Vec3, halfExtents [3]float32) bool {
+func triangleBoxOverlap(vertices [3]geom.Vec3, halfExtents [3]float32) (bodyMapHit, bool) {
 	edges := [3]geom.Vec3{
 		vertices[1].Sub(vertices[0]),
 		vertices[2].Sub(vertices[1]),
@@ -133,43 +166,55 @@ func triangleBoxOverlap(vertices [3]geom.Vec3, halfExtents [3]float32) bool {
 			if testAxis.LengthSquared() <= obbTriangleEpsilon {
 				continue
 			}
-			if separatedOnAxis(testAxis, vertices, halfExtents) {
-				return false
+			_, intersects := overlapOnAxis(testAxis, vertices, halfExtents)
+			if !intersects {
+				return bodyMapHit{}, false
 			}
 		}
 	}
 
 	// Test the 3 box face axes.
 	for axisIndex := 0; axisIndex < 3; axisIndex++ {
-		minValue := component(vertices[0], axisIndex)
-		maxValue := minValue
-		for i := 1; i < 3; i++ {
-			value := component(vertices[i], axisIndex)
-			if value < minValue {
-				minValue = value
-			}
-			if value > maxValue {
-				maxValue = value
-			}
-		}
-		if minValue > halfExtents[axisIndex] || maxValue < -halfExtents[axisIndex] {
-			return false
+		axis := axisFromIndex(axisIndex)
+		_, intersects := overlapOnAxis(axis, vertices, halfExtents)
+		if !intersects {
+			return bodyMapHit{}, false
 		}
 	}
 
 	// Test the triangle plane.
 	triangleNormal := edges[0].Cross(edges[1])
 	if triangleNormal.LengthSquared() <= obbTriangleEpsilon {
-		return false
+		return bodyMapHit{}, false
 	}
-	if separatedOnAxis(triangleNormal, vertices, halfExtents) {
-		return false
+	_, intersects := overlapOnAxis(triangleNormal, vertices, halfExtents)
+	if !intersects {
+		return bodyMapHit{}, false
 	}
 
-	return true
+	triangleNormal = triangleNormal.Normalize()
+	triangleCenter := vertices[0].Add(vertices[1]).Add(vertices[2]).MulScalar(1.0 / 3.0)
+	if triangleNormal.Dot(triangleCenter) > 0 {
+		triangleNormal = triangleNormal.MulScalar(-1)
+	}
+
+	planeDistance := absf(triangleNormal.Dot(vertices[0]))
+	planeRadius := halfExtents[0]*absf(triangleNormal.X) +
+		halfExtents[1]*absf(triangleNormal.Y) +
+		halfExtents[2]*absf(triangleNormal.Z)
+	penetration := planeRadius - planeDistance
+	if penetration <= obbTriangleEpsilon {
+		return bodyMapHit{}, false
+	}
+
+	return bodyMapHit{
+		Normal:      triangleNormal,
+		Penetration: penetration,
+	}, true
 }
 
-func separatedOnAxis(axis geom.Vec3, vertices [3]geom.Vec3, halfExtents [3]float32) bool {
+func overlapOnAxis(axis geom.Vec3, vertices [3]geom.Vec3, halfExtents [3]float32) (float32, bool) {
+	axis = axis.Normalize()
 	projections := [3]float32{
 		vertices[0].Dot(axis),
 		vertices[1].Dot(axis),
@@ -188,7 +233,22 @@ func separatedOnAxis(axis geom.Vec3, vertices [3]geom.Vec3, halfExtents [3]float
 	}
 
 	radius := halfExtents[0]*absf(axis.X) + halfExtents[1]*absf(axis.Y) + halfExtents[2]*absf(axis.Z)
-	return minProjection > radius || maxProjection < -radius
+	if minProjection > radius || maxProjection < -radius {
+		return 0, false
+	}
+
+	return minf(maxProjection, radius) - maxf(minProjection, -radius), true
+}
+
+func axisFromIndex(axisIndex int) geom.Vec3 {
+	switch axisIndex {
+	case 0:
+		return geom.V3(1, 0, 0)
+	case 1:
+		return geom.V3(0, 1, 0)
+	default:
+		return geom.V3(0, 0, 1)
+	}
 }
 
 func component(value geom.Vec3, axisIndex int) float32 {
@@ -204,4 +264,18 @@ func component(value geom.Vec3, axisIndex int) float32 {
 
 func absf(value float32) float32 {
 	return float32(math.Abs(float64(value)))
+}
+
+func minf(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxf(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -11,15 +11,23 @@ const spawnDropGravity float32 = 18
 
 // Step จะขยับโลกไปข้างหน้า 1 tick ตาม fixed dt ของ world
 func (w *PhysicsWorld) Step(input DriveInput) {
-	previous := w.player
 	w.player.BodyHitMap = false
 	w.player = simulateVehicle(w.player, input, w.config.FixedDT)
 	w.player = w.applyWorldConstraints(w.player)
 	w.player = w.applyGrounding(w.player, w.config.FixedDT)
-	if w.bodyOBBIntersectsMap(w.player) {
-		w.player = previous
+
+	for iteration := 0; iteration < 3; iteration++ {
+		hit, intersects := w.queryBodyOBBMapHit(w.player)
+		if !intersects {
+			break
+		}
+
+		w.player.Position.X += hit.Normal.X * hit.Penetration
+		w.player.Position.Z += hit.Normal.Z * hit.Penetration
+		w.player.Height += hit.Normal.Y * hit.Penetration
 		w.player.BodyHitMap = true
 	}
+	w.player.LastSafePos = w.player.Position
 	w.tick++
 }
 
