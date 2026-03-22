@@ -6,13 +6,13 @@ const ccdStartOverlapEpsilon float32 = 0.0001
 const ccdStartOverlapPenetrationThreshold float32 = 0.05
 const bodyFloorLikeNormalThreshold float32 = 0.6
 
-func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, dt float32) VehicleBody {
-	ccdHit, ccdIntersects := w.queryBodyOBBMapCCD(previous, current)
+func (w *PhysicsWorld) applyBodyCapsuleCCDWithSlide(previous, current VehicleBody, dt float32) VehicleBody {
+	ccdHit, ccdIntersects := w.queryBodyCapsuleMapCCD(previous, current)
 	if !ccdIntersects {
 		return current
 	}
 	if ccdHit.Time <= ccdStartOverlapEpsilon {
-		startHit, startIntersects := w.queryBodyOBBMapHit(previous)
+		startHit, startIntersects := w.queryBodyCapsuleMapHit(previous)
 		if !startIntersects || startHit.Penetration <= ccdStartOverlapPenetrationThreshold {
 			// A tiny initial overlap is often just contact skin / numerical noise.
 			// Keep the normal CCD+slide path for those shallow contacts.
@@ -54,7 +54,7 @@ func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, d
 		Roll:     current.Roll,
 		Normal:   ccdHit.Normal,
 	}
-	current = applyCCDContactSkin(current, ccdHit.Normal)
+	current = applyCCDContactSkin(current, ccdHit.Normal, bodyCapsuleCCDSkin)
 	current.BodyHitMap = true
 	current = slideBodyVelocityAgainstNormal(current, ccdHit.Normal)
 
@@ -64,16 +64,20 @@ func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, d
 	}
 
 	advanced := advanceVehicleWithRemainingTime(current, remainingDT)
-	secondHit, secondIntersects := w.queryBodyOBBMapCCD(current, advanced)
+	secondHit, secondIntersects := w.queryBodyCapsuleMapCCD(current, advanced)
 	if !secondIntersects {
 		return advanced
 	}
 
 	advanced = moveBodyToCCDContact(current, advanced, secondHit)
-	advanced = applyCCDContactSkin(advanced, secondHit.Normal)
+	advanced = applyCCDContactSkin(advanced, secondHit.Normal, bodyCapsuleCCDSkin)
 	advanced.BodyHitMap = true
 	advanced = slideBodyVelocityAgainstNormal(advanced, secondHit.Normal)
 	return advanced
+}
+
+func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, dt float32) VehicleBody {
+	return w.applyBodyCapsuleCCDWithSlide(previous, current, dt)
 }
 
 func shouldIgnoreCCDStartOverlap(vehicle VehicleBody, ccdHit bodyMapCCDHit, startHit bodyMapHit, startIntersects bool) bool {
@@ -93,18 +97,22 @@ func shouldIgnoreCCDStartOverlap(vehicle VehicleBody, ccdHit bodyMapCCDHit, star
 }
 
 func moveBodyToCCDContact(previous, current VehicleBody, hit bodyMapCCDHit) VehicleBody {
-	current.Position = geom.LerpPlanar(previous.Position, current.Position, hit.Time)
-	current.Height = lerpFloat32(previous.Height, current.Height, hit.Time)
-	current.Heading = lerpAngle(previous.Heading, current.Heading, hit.Time)
-	current.Pitch = lerpFloat32(previous.Pitch, current.Pitch, hit.Time)
-	current.Roll = lerpFloat32(previous.Roll, current.Roll, hit.Time)
+	return interpolateVehiclePose(previous, current, hit.Time)
+}
+
+func interpolateVehiclePose(previous, current VehicleBody, t float32) VehicleBody {
+	current.Position = geom.LerpPlanar(previous.Position, current.Position, t)
+	current.Height = lerpFloat32(previous.Height, current.Height, t)
+	current.Heading = lerpAngle(previous.Heading, current.Heading, t)
+	current.Pitch = lerpFloat32(previous.Pitch, current.Pitch, t)
+	current.Roll = lerpFloat32(previous.Roll, current.Roll, t)
 	return current
 }
 
-func applyCCDContactSkin(vehicle VehicleBody, normal geom.Vec3) VehicleBody {
-	vehicle.Position.X += normal.X * bodyOBBCCDSkin
-	vehicle.Position.Z += normal.Z * bodyOBBCCDSkin
-	vehicle.Height += normal.Y * bodyOBBCCDSkin
+func applyCCDContactSkin(vehicle VehicleBody, normal geom.Vec3, skin float32) VehicleBody {
+	vehicle.Position.X += normal.X * skin
+	vehicle.Position.Z += normal.Z * skin
+	vehicle.Height += normal.Y * skin
 	return vehicle
 }
 

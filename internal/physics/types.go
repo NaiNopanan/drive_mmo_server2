@@ -114,23 +114,26 @@ type OBBCCDDebug struct {
 
 // VehicleSnapshot คือข้อมูลอ่านอย่างเดียวสำหรับ viewer
 type VehicleSnapshot struct {
-	ID           string
-	Position     geom.PlanarVec
-	Velocity     geom.PlanarVec
-	Heading      float32
-	Pitch        float32
-	Roll         float32
-	Speed        float32
-	Height       float32
-	GroundHeight float32
-	BodyHitMap   bool
-	OBBCCD       OBBCCDDebug
-	SupportState SupportState
-	SupportHits  int
-	Wheels       [wheelCount]WheelSnapshot
-	Length       float32
-	Width        float32
-	IsPlayer     bool
+	ID                 string
+	Position           geom.PlanarVec
+	Velocity           geom.PlanarVec
+	Heading            float32
+	Pitch              float32
+	Roll               float32
+	Speed              float32
+	Height             float32
+	GroundHeight       float32
+	BodyHitMap         bool
+	OBBCCD             OBBCCDDebug
+	SupportState       SupportState
+	SupportHits        int
+	Wheels             [wheelCount]WheelSnapshot
+	Length             float32
+	Width              float32
+	BodyHeight         float32
+	ColliderRadius     float32
+	ColliderHalfLength float32
+	IsPlayer           bool
 }
 
 // WorldSnapshot คือภาพรวมของโลกใน tick ปัจจุบัน

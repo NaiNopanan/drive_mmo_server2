@@ -20,10 +20,10 @@ func (w *PhysicsWorld) Step(input DriveInput) {
 	w.player = simulateVehicle(w.player, input, w.config.FixedDT)
 	w.player = w.applyWorldConstraints(w.player)
 	w.player = w.applyGrounding(w.player, w.config.FixedDT)
-	w.player = w.applyBodyOBBCCDWithSlide(previous, w.player, w.config.FixedDT)
+	w.player = w.applyBodyCapsuleCCDWithSlide(previous, w.player, w.config.FixedDT)
 
 	for iteration := 0; iteration < 3; iteration++ {
-		hit, intersects := w.queryBodyOBBMapHit(w.player)
+		hit, intersects := w.queryBodyCapsuleMapHit(w.player)
 		if !intersects {
 			break
 		}

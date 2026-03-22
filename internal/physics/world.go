@@ -50,23 +50,27 @@ func (w *PhysicsWorld) Snapshot() WorldSnapshot {
 }
 
 func snapshotFromVehicle(vehicle VehicleBody, isPlayer bool) VehicleSnapshot {
+	colliderRadius, colliderHalfLength := bodyCapsuleDimensions(vehicle.Params)
 	snapshot := VehicleSnapshot{
-		ID:           vehicle.ID,
-		Position:     vehicle.Position,
-		Velocity:     vehicle.Velocity,
-		Heading:      vehicle.Heading,
-		Pitch:        vehicle.Pitch,
-		Roll:         vehicle.Roll,
-		Speed:        vehicle.Speed,
-		Height:       vehicle.Height,
-		GroundHeight: vehicle.GroundHeight,
-		BodyHitMap:   vehicle.BodyHitMap,
-		OBBCCD:       vehicle.OBBCCD,
-		SupportState: vehicle.SupportState,
-		SupportHits:  vehicle.SupportHits,
-		Length:       vehicle.Params.BodyLength,
-		Width:        vehicle.Params.BodyWidth,
-		IsPlayer:     isPlayer,
+		ID:                 vehicle.ID,
+		Position:           vehicle.Position,
+		Velocity:           vehicle.Velocity,
+		Heading:            vehicle.Heading,
+		Pitch:              vehicle.Pitch,
+		Roll:               vehicle.Roll,
+		Speed:              vehicle.Speed,
+		Height:             vehicle.Height,
+		GroundHeight:       vehicle.GroundHeight,
+		BodyHitMap:         vehicle.BodyHitMap,
+		OBBCCD:             vehicle.OBBCCD,
+		SupportState:       vehicle.SupportState,
+		SupportHits:        vehicle.SupportHits,
+		Length:             vehicle.Params.BodyLength,
+		Width:              vehicle.Params.BodyWidth,
+		BodyHeight:         vehicle.Params.BodyHeight,
+		ColliderRadius:     colliderRadius,
+		ColliderHalfLength: colliderHalfLength,
+		IsPlayer:           isPlayer,
 	}
 
 	for index, wheel := range vehicle.Wheels {
