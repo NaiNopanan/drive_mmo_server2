@@ -11,10 +11,40 @@ const spawnDropGravity float32 = 18
 
 // Step จะขยับโลกไปข้างหน้า 1 tick ตาม fixed dt ของ world
 func (w *PhysicsWorld) Step(input DriveInput) {
+	previous := w.player
 	w.player.BodyHitMap = false
+	w.player.OBBCCD = OBBCCDDebug{}
 	w.player = simulateVehicle(w.player, input, w.config.FixedDT)
 	w.player = w.applyWorldConstraints(w.player)
 	w.player = w.applyGrounding(w.player, w.config.FixedDT)
+
+	ccdHit, ccdIntersects := w.queryBodyOBBMapCCD(previous, w.player)
+	if ccdIntersects {
+		contactPosition := geom.LerpPlanar(previous.Position, w.player.Position, ccdHit.Time)
+		contactHeight := lerpFloat32(previous.Height, w.player.Height, ccdHit.Time)
+		contactHeading := lerpAngle(previous.Heading, w.player.Heading, ccdHit.Time)
+		contactPitch := lerpFloat32(previous.Pitch, w.player.Pitch, ccdHit.Time)
+		contactRoll := lerpFloat32(previous.Roll, w.player.Roll, ccdHit.Time)
+		w.player.OBBCCD = OBBCCDDebug{
+			Hit:      true,
+			Time:     ccdHit.Time,
+			Position: contactPosition,
+			Height:   contactHeight,
+			Heading:  contactHeading,
+			Pitch:    contactPitch,
+			Roll:     contactRoll,
+			Normal:   ccdHit.Normal,
+		}
+		w.player.Position = contactPosition
+		w.player.Height = contactHeight
+		w.player.Heading = contactHeading
+		w.player.Pitch = contactPitch
+		w.player.Roll = contactRoll
+		w.player.Position.X += ccdHit.Normal.X * bodyOBBCCDSkin
+		w.player.Position.Z += ccdHit.Normal.Z * bodyOBBCCDSkin
+		w.player.Height += ccdHit.Normal.Y * bodyOBBCCDSkin
+		w.player.BodyHitMap = true
+	}
 
 	for iteration := 0; iteration < 3; iteration++ {
 		hit, intersects := w.queryBodyOBBMapHit(w.player)
@@ -27,8 +57,32 @@ func (w *PhysicsWorld) Step(input DriveInput) {
 		w.player.Height += hit.Normal.Y * hit.Penetration
 		w.player.BodyHitMap = true
 	}
+	w.player = w.refreshGroundingAfterCollision(w.player)
 	w.player.LastSafePos = w.player.Position
 	w.tick++
+}
+
+func (w *PhysicsWorld) refreshGroundingAfterCollision(vehicle VehicleBody) VehicleBody {
+	vehicle.Wheels = w.sampleWheelStates(vehicle)
+	support := solveSupport(vehicle)
+	vehicle.SupportState = support.State
+	vehicle.SupportHits = support.HitCount
+	vehicle.GroundHeight = support.GroundHeight
+
+	if support.State != SupportStateFalling && vehicle.Height < support.BodyHeight {
+		vehicle.Height = support.BodyHeight
+		if vehicle.VerticalVel < 0 {
+			vehicle.VerticalVel = 0
+		}
+	}
+
+	vehicle = applyBodyTilt(vehicle, support)
+	vehicle.Wheels = w.sampleWheelStates(vehicle)
+	support = solveSupport(vehicle)
+	vehicle.SupportState = support.State
+	vehicle.SupportHits = support.HitCount
+	vehicle.GroundHeight = support.GroundHeight
+	return vehicle
 }
 
 // simulateVehicle เป็นฟิสิกส์แบบ arcade ง่าย ๆ สำหรับใช้เป็นฐานเริ่มระบบรถใหม่

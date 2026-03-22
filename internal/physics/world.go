@@ -20,9 +20,8 @@ func NewWorld(config WorldConfig) *PhysicsWorld {
 		config:     config,
 		staticMesh: config.StaticMesh,
 		player: VehicleBody{
-			ID:       "player-1",
-			Position: config.PlayerSpawn,
-			// ให้รถเริ่มลอยจากพื้นจริงของ mesh ราว 3 เมตร เพื่อดูการตกตอน spawn ชัดเจน
+			ID:           "player-1",
+			Position:     config.PlayerSpawn,
 			Height:       spawnGroundHeight + 3,
 			GroundHeight: spawnGroundHeight,
 			VerticalVel:  0,
@@ -62,6 +61,7 @@ func snapshotFromVehicle(vehicle VehicleBody, isPlayer bool) VehicleSnapshot {
 		Height:       vehicle.Height,
 		GroundHeight: vehicle.GroundHeight,
 		BodyHitMap:   vehicle.BodyHitMap,
+		OBBCCD:       vehicle.OBBCCD,
 		SupportState: vehicle.SupportState,
 		SupportHits:  vehicle.SupportHits,
 		Length:       vehicle.Params.BodyLength,

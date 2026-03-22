@@ -276,6 +276,7 @@ func drawScene(snapshot physics.WorldSnapshot, renderer debugRenderer) {
 		lineColor = rl.NewColor(255, 164, 64, 255)
 	}
 	renderer.DrawVehicleCollider(snapshot.Player, fillColor, lineColor)
+	drawOBBCCDDebug(snapshot.Player)
 	drawWheelRays(snapshot.Player)
 }
 
@@ -362,21 +363,49 @@ func drawWheelRays(vehicle physics.VehicleSnapshot) {
 	}
 }
 
+func drawOBBCCDDebug(vehicle physics.VehicleSnapshot) {
+	if !vehicle.OBBCCD.Hit {
+		return
+	}
+
+	normalColor := rl.NewColor(255, 96, 96, 255)
+	center := posePoint(
+		vehicle.OBBCCD.Position,
+		vehicle.OBBCCD.Height+chassisH*0.5,
+		vehicle.OBBCCD.Heading,
+		vehicle.OBBCCD.Pitch,
+		vehicle.OBBCCD.Roll,
+		0, 0, 0,
+	)
+	normalEnd := rl.Vector3Add(center, rl.NewVector3(
+		vehicle.OBBCCD.Normal.X*1.2,
+		vehicle.OBBCCD.Normal.Y*1.2,
+		vehicle.OBBCCD.Normal.Z*1.2,
+	))
+	rl.DrawSphere(center, 0.06, rl.NewColor(255, 232, 96, 255))
+	rl.DrawLine3D(center, normalEnd, normalColor)
+	rl.DrawSphere(normalEnd, 0.05, normalColor)
+}
+
 func chassisCorners(vehicle physics.VehicleSnapshot) [8]rl.Vector3 {
-	halfLength := vehicle.Length * 0.5
-	halfWidth := vehicle.Width * 0.5
+	return poseCorners(vehicle.Length, vehicle.Width, vehicle.Position, vehicle.Height, vehicle.Heading, vehicle.Pitch, vehicle.Roll)
+}
+
+func poseCorners(length, width float32, position geom.PlanarVec, height, heading, pitch, roll float32) [8]rl.Vector3 {
+	halfLength := length * 0.5
+	halfWidth := width * 0.5
 	halfHeight := float32(chassisH * 0.5)
+	centerHeight := height + chassisH*0.5
 
 	var corners [8]rl.Vector3
-	corners[0] = vehiclePoint(vehicle, halfLength, halfHeight, halfWidth)
-	corners[1] = vehiclePoint(vehicle, halfLength, halfHeight, -halfWidth)
-	corners[2] = vehiclePoint(vehicle, -halfLength, halfHeight, -halfWidth)
-	corners[3] = vehiclePoint(vehicle, -halfLength, halfHeight, halfWidth)
-	corners[4] = vehiclePoint(vehicle, halfLength, -halfHeight, halfWidth)
-	corners[5] = vehiclePoint(vehicle, halfLength, -halfHeight, -halfWidth)
-	corners[6] = vehiclePoint(vehicle, -halfLength, -halfHeight, -halfWidth)
-	corners[7] = vehiclePoint(vehicle, -halfLength, -halfHeight, halfWidth)
-
+	corners[0] = posePoint(position, centerHeight, heading, pitch, roll, halfLength, halfHeight, halfWidth)
+	corners[1] = posePoint(position, centerHeight, heading, pitch, roll, halfLength, halfHeight, -halfWidth)
+	corners[2] = posePoint(position, centerHeight, heading, pitch, roll, -halfLength, halfHeight, -halfWidth)
+	corners[3] = posePoint(position, centerHeight, heading, pitch, roll, -halfLength, halfHeight, halfWidth)
+	corners[4] = posePoint(position, centerHeight, heading, pitch, roll, halfLength, -halfHeight, halfWidth)
+	corners[5] = posePoint(position, centerHeight, heading, pitch, roll, halfLength, -halfHeight, -halfWidth)
+	corners[6] = posePoint(position, centerHeight, heading, pitch, roll, -halfLength, -halfHeight, -halfWidth)
+	corners[7] = posePoint(position, centerHeight, heading, pitch, roll, -halfLength, -halfHeight, halfWidth)
 	return corners
 }
 
@@ -421,6 +450,17 @@ func drawHUD(snapshot physics.WorldSnapshot, paused bool, mode renderMode, camer
 		fmt.Sprintf("position: [%.1f, %.1f]", snapshot.Player.Position.X, snapshot.Player.Position.Z),
 		fmt.Sprintf("world triangles: %d", len(snapshot.StaticMesh.Triangles)),
 		fmt.Sprintf("world size: %.1fm x %.1fm", snapshot.StaticMesh.Max.X-snapshot.StaticMesh.Min.X, snapshot.StaticMesh.Max.Z-snapshot.StaticMesh.Min.Z),
+	}
+	if snapshot.Player.OBBCCD.Hit {
+		lines = append(lines, fmt.Sprintf(
+			"ccd: hit toi=%.2f n=[%.2f %.2f %.2f]",
+			snapshot.Player.OBBCCD.Time,
+			snapshot.Player.OBBCCD.Normal.X,
+			snapshot.Player.OBBCCD.Normal.Y,
+			snapshot.Player.OBBCCD.Normal.Z,
+		))
+	} else {
+		lines = append(lines, "ccd: no hit")
 	}
 	for _, wheel := range snapshot.Player.Wheels {
 		lines = append(lines, fmt.Sprintf("%s: hit=%t len=%.2f comp=%.2f", wheel.Label, wheel.Hit, wheel.SuspensionLength, wheel.Compression))
@@ -527,6 +567,7 @@ func interpolateVehicleSnapshot(previous, current physics.VehicleSnapshot, alpha
 		Height:       lerp(previous.Height, current.Height, alpha),
 		GroundHeight: lerp(previous.GroundHeight, current.GroundHeight, alpha),
 		BodyHitMap:   current.BodyHitMap,
+		OBBCCD:       interpolateOBBCCDDebug(previous.OBBCCD, current.OBBCCD, alpha),
 		SupportState: current.SupportState,
 		SupportHits:  current.SupportHits,
 		Length:       current.Length,
@@ -554,9 +595,30 @@ func interpolateWheelSnapshot(previous, current physics.WheelSnapshot, alpha flo
 	}
 }
 
+func interpolateOBBCCDDebug(previous, current physics.OBBCCDDebug, alpha float32) physics.OBBCCDDebug {
+	normal := geom.LerpVec3(previous.Normal, current.Normal, alpha)
+	if normal.LengthSquared() > 0 {
+		normal = normal.Normalize()
+	}
+	return physics.OBBCCDDebug{
+		Hit:      current.Hit,
+		Time:     lerp(previous.Time, current.Time, alpha),
+		Position: geom.LerpPlanar(previous.Position, current.Position, alpha),
+		Height:   lerp(previous.Height, current.Height, alpha),
+		Heading:  lerpAngle(previous.Heading, current.Heading, alpha),
+		Pitch:    lerp(previous.Pitch, current.Pitch, alpha),
+		Roll:     lerp(previous.Roll, current.Roll, alpha),
+		Normal:   normal,
+	}
+}
+
 func vehiclePoint(vehicle physics.VehicleSnapshot, localX, localY, localZ float32) rl.Vector3 {
-	center := toRenderVector(vehicle.Position, vehicle.Height+chassisH*0.5)
-	forward, right, up := vehicleAxes(vehicle)
+	return posePoint(vehicle.Position, vehicle.Height+chassisH*0.5, vehicle.Heading, vehicle.Pitch, vehicle.Roll, localX, localY, localZ)
+}
+
+func posePoint(position geom.PlanarVec, centerHeight, heading, pitch, roll, localX, localY, localZ float32) rl.Vector3 {
+	center := toRenderVector(position, centerHeight)
+	forward, right, up := poseAxes(heading, pitch, roll)
 	point := center
 	point = rl.Vector3Add(point, rl.Vector3Scale(forward, localX))
 	point = rl.Vector3Add(point, rl.Vector3Scale(up, localY))
@@ -565,14 +627,18 @@ func vehiclePoint(vehicle physics.VehicleSnapshot, localX, localY, localZ float3
 }
 
 func vehicleAxes(vehicle physics.VehicleSnapshot) (rl.Vector3, rl.Vector3, rl.Vector3) {
-	forward := headingForward3D(vehicle.Heading)
+	return poseAxes(vehicle.Heading, vehicle.Pitch, vehicle.Roll)
+}
+
+func poseAxes(heading, pitch, roll float32) (rl.Vector3, rl.Vector3, rl.Vector3) {
+	forward := headingForward3D(heading)
 	right := rl.NewVector3(-forward.Z, 0, forward.X)
 	up := rl.NewVector3(0, 1, 0)
 
-	forward = rotateAroundAxis(forward, right, vehicle.Pitch)
-	up = rotateAroundAxis(up, right, vehicle.Pitch)
-	right = rotateAroundAxis(right, forward, vehicle.Roll)
-	up = rotateAroundAxis(up, forward, vehicle.Roll)
+	forward = rotateAroundAxis(forward, right, pitch)
+	up = rotateAroundAxis(up, right, pitch)
+	right = rotateAroundAxis(right, forward, roll)
+	up = rotateAroundAxis(up, forward, roll)
 
 	return rl.Vector3Normalize(forward), rl.Vector3Normalize(right), rl.Vector3Normalize(up)
 }

@@ -81,6 +81,7 @@ type VehicleBody struct {
 	GroundHeight float32
 	VerticalVel  float32
 	BodyHitMap   bool
+	OBBCCD       OBBCCDDebug
 	SupportState SupportState
 	SupportHits  int
 	Wheels       [wheelCount]WheelState
@@ -100,6 +101,17 @@ type WheelSnapshot struct {
 	Compression      float32
 }
 
+type OBBCCDDebug struct {
+	Hit      bool
+	Time     float32
+	Position geom.PlanarVec
+	Height   float32
+	Heading  float32
+	Pitch    float32
+	Roll     float32
+	Normal   geom.Vec3
+}
+
 // VehicleSnapshot คือข้อมูลอ่านอย่างเดียวสำหรับ viewer
 type VehicleSnapshot struct {
 	ID           string
@@ -112,6 +124,7 @@ type VehicleSnapshot struct {
 	Height       float32
 	GroundHeight float32
 	BodyHitMap   bool
+	OBBCCD       OBBCCDDebug
 	SupportState SupportState
 	SupportHits  int
 	Wheels       [wheelCount]WheelSnapshot
