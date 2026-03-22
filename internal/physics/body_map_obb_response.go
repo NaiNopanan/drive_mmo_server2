@@ -2,10 +2,45 @@ package physics
 
 import "server2/pkg/geom"
 
+const ccdStartOverlapEpsilon float32 = 0.0001
+const ccdStartOverlapPenetrationThreshold float32 = 0.05
+const bodyFloorLikeNormalThreshold float32 = 0.6
+
 func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, dt float32) VehicleBody {
 	ccdHit, ccdIntersects := w.queryBodyOBBMapCCD(previous, current)
 	if !ccdIntersects {
 		return current
+	}
+	if ccdHit.Time <= ccdStartOverlapEpsilon {
+		startHit, startIntersects := w.queryBodyOBBMapHit(previous)
+		if !startIntersects || startHit.Penetration <= ccdStartOverlapPenetrationThreshold {
+			// A tiny initial overlap is often just contact skin / numerical noise.
+			// Keep the normal CCD+slide path for those shallow contacts.
+			if shouldIgnoreCCDStartOverlap(current, ccdHit, startHit, startIntersects) {
+				return current
+			}
+		} else {
+			// Start-overlap means the previous pose is already intersecting.
+			// Fall back to depenetrating from that earlier pose instead of letting the
+			// body advance deeper into geometry before the depenetration loop runs.
+			current.Position = previous.Position
+			current.Height = previous.Height
+			current.Heading = previous.Heading
+			current.Pitch = previous.Pitch
+			current.Roll = previous.Roll
+			current.OBBCCD = OBBCCDDebug{
+				Hit:      true,
+				Time:     ccdHit.Time,
+				Position: current.Position,
+				Height:   current.Height,
+				Heading:  current.Heading,
+				Pitch:    current.Pitch,
+				Roll:     current.Roll,
+				Normal:   ccdHit.Normal,
+			}
+			current.BodyHitMap = true
+			return current
+		}
 	}
 
 	current = moveBodyToCCDContact(previous, current, ccdHit)
@@ -39,6 +74,22 @@ func (w *PhysicsWorld) applyBodyOBBCCDWithSlide(previous, current VehicleBody, d
 	advanced.BodyHitMap = true
 	advanced = slideBodyVelocityAgainstNormal(advanced, secondHit.Normal)
 	return advanced
+}
+
+func shouldIgnoreCCDStartOverlap(vehicle VehicleBody, ccdHit bodyMapCCDHit, startHit bodyMapHit, startIntersects bool) bool {
+	if !startIntersects {
+		return false
+	}
+	if ccdHit.Normal.Y < bodyFloorLikeNormalThreshold {
+		return false
+	}
+	if vehicle.SupportState == SupportStateFalling || vehicle.SupportHits < 2 {
+		return false
+	}
+	if startHit.Penetration > ccdStartOverlapPenetrationThreshold {
+		return false
+	}
+	return true
 }
 
 func moveBodyToCCDContact(previous, current VehicleBody, hit bodyMapCCDHit) VehicleBody {

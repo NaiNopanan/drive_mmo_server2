@@ -174,6 +174,90 @@ func TestApplyBodyOBBCCDWithSlideMovesAlongWall(t *testing.T) {
 	}
 }
 
+func TestApplyBodyOBBCCDWithSlideSkipsSlideForStartOverlap(t *testing.T) {
+	world := PhysicsWorld{
+		staticMesh: testWallMesh(),
+	}
+	params := DefaultVehicleParams()
+	previous := VehicleBody{
+		Position: geom.Planar(0, 0),
+		Height:   0,
+		Params:   params,
+	}
+	current := previous
+	current.Position = geom.Planar(0.4, 0.3)
+	current.Velocity = geom.Planar(5, 2)
+	current.Speed = current.Velocity.Length()
+
+	resolved := world.applyBodyOBBCCDWithSlide(previous, current, 1)
+	if !resolved.OBBCCD.Hit {
+		t.Fatal("expected CCD debug hit for start-overlap case")
+	}
+	if resolved.OBBCCD.Time > ccdStartOverlapEpsilon {
+		t.Fatalf("expected start-overlap TOI near zero, got %f", resolved.OBBCCD.Time)
+	}
+	if resolved.Position != previous.Position {
+		t.Fatalf("expected start-overlap case to fall back to previous pose before depenetration, got %+v want %+v", resolved.Position, previous.Position)
+	}
+	if resolved.Velocity != current.Velocity {
+		t.Fatalf("expected start-overlap case to keep planar velocity unchanged, got %+v want %+v", resolved.Velocity, current.Velocity)
+	}
+}
+
+func TestShouldIgnoreCCDStartOverlapForSupportedFloorContact(t *testing.T) {
+	vehicle := VehicleBody{
+		SupportState: SupportStateStable,
+		SupportHits:  4,
+	}
+	ccdHit := bodyMapCCDHit{
+		Time:   0,
+		Normal: geom.V3(0.01, 1, 0),
+	}
+	startHit := bodyMapHit{
+		Penetration: 0.02,
+	}
+
+	if !shouldIgnoreCCDStartOverlap(vehicle, ccdHit, startHit, true) {
+		t.Fatal("expected supported shallow floor overlap to be ignored")
+	}
+}
+
+func TestShouldNotIgnoreCCDStartOverlapForDeepFloorContact(t *testing.T) {
+	vehicle := VehicleBody{
+		SupportState: SupportStateStable,
+		SupportHits:  4,
+	}
+	ccdHit := bodyMapCCDHit{
+		Time:   0,
+		Normal: geom.V3(0, 1, 0),
+	}
+	startHit := bodyMapHit{
+		Penetration: 0.20,
+	}
+
+	if shouldIgnoreCCDStartOverlap(vehicle, ccdHit, startHit, true) {
+		t.Fatal("expected deep floor overlap to stay in depenetration path")
+	}
+}
+
+func TestShouldNotIgnoreCCDStartOverlapForWallLikeContact(t *testing.T) {
+	vehicle := VehicleBody{
+		SupportState: SupportStateStable,
+		SupportHits:  4,
+	}
+	ccdHit := bodyMapCCDHit{
+		Time:   0,
+		Normal: geom.V3(1, 0, 0),
+	}
+	startHit := bodyMapHit{
+		Penetration: 0.02,
+	}
+
+	if shouldIgnoreCCDStartOverlap(vehicle, ccdHit, startHit, true) {
+		t.Fatal("expected wall-like contact to stay in collision path")
+	}
+}
+
 func testWallMesh() worldmesh.StaticMesh {
 	return worldmesh.StaticMesh{
 		Triangles: []worldmesh.Triangle{
@@ -203,6 +287,43 @@ func testSideWallMesh() worldmesh.StaticMesh {
 				A: geom.V3(-3, 2.5, 1.4),
 				B: geom.V3(3, 2.5, 1.4),
 				C: geom.V3(3, 0, 1.4),
+			},
+		},
+	}
+}
+
+func TestSampleWheelStatesUsesPreviousHitHysteresis(t *testing.T) {
+	world := PhysicsWorld{
+		staticMesh: testFlatFloorMesh(),
+	}
+	vehicle := VehicleBody{
+		Position: geom.Planar(0, 0),
+		Height:   0.60,
+		Params:   DefaultVehicleParams(),
+	}
+	vehicle.Wheels[0].Hit = true
+
+	wheels := world.sampleWheelStates(vehicle)
+	if !wheels[0].Hit {
+		t.Fatal("expected previously-supported wheel to keep floor contact via hysteresis")
+	}
+	if wheels[1].Hit || wheels[2].Hit || wheels[3].Hit {
+		t.Fatal("expected only the previously-supported wheel to receive the extra hysteresis reach")
+	}
+}
+
+func testFlatFloorMesh() worldmesh.StaticMesh {
+	return worldmesh.StaticMesh{
+		Triangles: []worldmesh.Triangle{
+			{
+				A: geom.V3(-10, 0, -10),
+				B: geom.V3(10, 0, -10),
+				C: geom.V3(-10, 0, 10),
+			},
+			{
+				A: geom.V3(10, 0, -10),
+				B: geom.V3(10, 0, 10),
+				C: geom.V3(-10, 0, 10),
 			},
 		},
 	}

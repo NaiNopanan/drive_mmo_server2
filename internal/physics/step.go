@@ -7,7 +7,10 @@ import (
 	"server2/pkg/geom"
 )
 
-const spawnDropGravity float32 = 18
+const (
+	spawnDropGravity            float32 = 18
+	wheelSupportHysteresisExtra float32 = 0.20
+)
 
 // Step จะขยับโลกไปข้างหน้า 1 tick ตาม fixed dt ของ world
 func (w *PhysicsWorld) Step(input DriveInput) {
@@ -158,11 +161,17 @@ func (w *PhysicsWorld) sampleWheelStates(vehicle VehicleBody) [wheelCount]WheelS
 	localOffsets := wheelLocalOffsets(suspension)
 	wheelLabels := [wheelCount]string{"FL", "FR", "RL", "RR"}
 	maxDistance := suspension.WheelRadius + suspension.RestLength + suspension.MaxTravel
+	maxSuspensionLength := suspension.RestLength + suspension.MaxTravel
 
 	var wheels [wheelCount]WheelState
 	for index, localOffset := range localOffsets {
+		searchDistance := maxDistance
+		if vehicle.Wheels[index].Hit {
+			searchDistance += wheelSupportHysteresisExtra
+		}
+
 		mountPoint := supportMountPoint(vehicle, localOffset.X, suspension.MountHeight, localOffset.Z)
-		hit := w.queryGroundHit(mountPoint, maxDistance)
+		hit := w.queryGroundHit(mountPoint, searchDistance)
 
 		wheel := WheelState{
 			Label:       wheelLabels[index],
@@ -177,6 +186,9 @@ func (w *PhysicsWorld) sampleWheelStates(vehicle VehicleBody) [wheelCount]WheelS
 			suspensionLength := hit.Distance - suspension.WheelRadius
 			if suspensionLength < 0 {
 				suspensionLength = 0
+			}
+			if suspensionLength > maxSuspensionLength {
+				suspensionLength = maxSuspensionLength
 			}
 
 			wheel.SuspensionLength = suspensionLength
