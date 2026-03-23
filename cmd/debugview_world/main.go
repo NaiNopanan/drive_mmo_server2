@@ -342,7 +342,7 @@ func drawQuad(a, b, c, d rl.Vector3, color rl.Color) {
 }
 
 func drawKinematicDebug(vehicle physics.VehicleSnapshot) {
-	center := capsuleCenter(vehicle.Position, vehicle.Height, vehicle.Heading, vehicle.Pitch, vehicle.Roll, vehicle.ColliderRadius)
+	center := capsuleCenter(vehicle.Position, vehicle.Height, vehicle.Heading, vehicle.Pitch, vehicle.Roll, vehicle.ColliderRadius, vehicle.ColliderHalfLength)
 	drawDebugVector(center, vehicle.Kinematic.ForwardVector, 1.8, rl.NewColor(255, 255, 255, 255))
 	drawDebugVector(center, vehicle.Kinematic.RightVector, 1.2, rl.NewColor(192, 192, 192, 220))
 	drawDebugVector(center, vehicle.Kinematic.PlanarVelocity, 0.16, rl.NewColor(255, 96, 96, 255))
@@ -718,12 +718,15 @@ func vehiclePoint(vehicle physics.VehicleSnapshot, localX, localY, localZ float3
 	return posePoint(vehicle.Position, vehicle.Height+vehicle.BodyHeight*0.5, vehicle.Heading, vehicle.Pitch, vehicle.Roll, localX, localY, localZ)
 }
 
-func capsuleCenter(position geom.PlanarVec, height, heading, pitch, roll, radius float32) rl.Vector3 {
-	return posePoint(position, height+radius, heading, pitch, roll, 0, 0, 0)
+func capsuleCenter(position geom.PlanarVec, height, heading, pitch, roll, radius, halfLength float32) rl.Vector3 {
+	forward, _, _ := poseAxes(heading, pitch, roll)
+	centerHeight := height + radius + float32(math.Abs(float64(forward.Y)))*halfLength
+	return posePoint(position, centerHeight, heading, pitch, roll, 0, 0, 0)
 }
 
 func capsuleEndpoints(position geom.PlanarVec, height, heading, pitch, roll, radius, halfLength float32) (rl.Vector3, rl.Vector3) {
-	centerHeight := height + radius
+	forward, _, _ := poseAxes(heading, pitch, roll)
+	centerHeight := height + radius + float32(math.Abs(float64(forward.Y)))*halfLength
 	return posePoint(position, centerHeight, heading, pitch, roll, halfLength, 0, 0),
 		posePoint(position, centerHeight, heading, pitch, roll, -halfLength, 0, 0)
 }

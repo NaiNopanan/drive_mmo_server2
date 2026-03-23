@@ -1,6 +1,7 @@
 package physics
 
 import (
+	"math"
 	"testing"
 
 	"server2/pkg/geom"
@@ -77,5 +78,27 @@ func TestApplyBodyCapsuleCCDWithSlideMovesAlongWall(t *testing.T) {
 	}
 	if world.bodyCapsuleIntersectsMap(resolved) {
 		t.Fatal("expected resolved vehicle to stay out of wall")
+	}
+}
+
+func TestBodyCapsuleFromVehicleUsesPitchAndKeepsBottomHeight(t *testing.T) {
+	params := DefaultVehicleParams()
+	vehicle := VehicleBody{
+		Position: geom.Planar(0, 0),
+		Height:   1.25,
+		Heading:  0,
+		Pitch:    0.35,
+		Roll:     0.2,
+		Params:   params,
+	}
+
+	capsule := bodyCapsuleFromVehicle(vehicle)
+	if capsule.start.Y <= capsule.end.Y {
+		t.Fatalf("expected pitched capsule nose to rise, got start=%f end=%f", capsule.start.Y, capsule.end.Y)
+	}
+
+	bottomY := minf(capsule.start.Y, capsule.end.Y) - capsule.radius
+	if math.Abs(float64(bottomY-vehicle.Height)) > 0.0001 {
+		t.Fatalf("expected capsule bottom to stay anchored at vehicle height, got bottom=%f height=%f", bottomY, vehicle.Height)
 	}
 }

@@ -89,10 +89,18 @@ func TestStepVehicleKinematicClimbsSteepSlope(t *testing.T) {
 		},
 	}
 
+	reachedSlope := false
 	for tick := 0; tick < 40; tick++ {
 		world.Step(DriveInput{Throttle: 1})
+		if world.player.Position.X >= 0.5 {
+			reachedSlope = true
+			break
+		}
 	}
 
+	if !reachedSlope {
+		t.Fatalf("expected player to reach slope body region, got position %+v", world.player.Position)
+	}
 	if world.player.Position.X <= -0.5 {
 		t.Fatalf("expected player to progress onto slope, got position %+v", world.player.Position)
 	}
@@ -104,6 +112,61 @@ func TestStepVehicleKinematicClimbsSteepSlope(t *testing.T) {
 	}
 	if absf(world.player.Pitch) < 0.05 {
 		t.Fatalf("expected player body to tilt with slope, got pitch %f", world.player.Pitch)
+	}
+}
+
+func TestStepVehicleKinematicApproachesSlopeWithoutHeightJitter(t *testing.T) {
+	world := PhysicsWorld{
+		config: WorldConfig{
+			FixedDT:     1.0 / 20.0,
+			WorldBounds: geom.NewAABB(-20, -20, 20, 20),
+		},
+		staticMesh: combineStaticMeshes(testFlatFloorMesh(), testSteepSlopeMesh()),
+		player: VehicleBody{
+			Position:     geom.Planar(-3.2, 0),
+			Height:       0,
+			Heading:      0,
+			SupportState: SupportStateStable,
+			SupportHits:  1,
+			GroundHeight: 0,
+			Kinematic: KinematicDebug{
+				Grounded:     true,
+				GroundNormal: geom.V3(0, 1, 0),
+			},
+			Params: DefaultVehicleParams(),
+		},
+	}
+
+	maxDrop := float32(0)
+	maxPitchDelta := float32(0)
+	lastHeight := world.player.Height
+	lastPitch := world.player.Pitch
+	startedClimb := false
+
+	for tick := 0; tick < 24; tick++ {
+		world.Step(DriveInput{Throttle: 1})
+		if world.player.Position.X >= -2.2 {
+			startedClimb = true
+		}
+		if startedClimb {
+			drop := lastHeight - world.player.Height
+			if drop > maxDrop {
+				maxDrop = drop
+			}
+			pitchDelta := absf(world.player.Pitch - lastPitch)
+			if pitchDelta > maxPitchDelta {
+				maxPitchDelta = pitchDelta
+			}
+		}
+		lastHeight = world.player.Height
+		lastPitch = world.player.Pitch
+	}
+
+	if maxDrop > 0.12 {
+		t.Fatalf("expected slope entry to stay stable, got max height drop %f", maxDrop)
+	}
+	if maxPitchDelta > 0.12 {
+		t.Fatalf("expected slope entry pitch to change smoothly, got max pitch delta %f", maxPitchDelta)
 	}
 }
 

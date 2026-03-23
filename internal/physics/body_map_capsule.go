@@ -16,20 +16,22 @@ type bodyCapsule struct {
 }
 
 func bodyCapsuleFromVehicle(vehicle VehicleBody) bodyCapsule {
-	forward := geom.V3(
-		float32(math.Cos(float64(vehicle.Heading))),
-		0,
-		float32(math.Sin(float64(vehicle.Heading))),
-	)
-	up := geom.V3(0, 1, 0)
+	forward, _, _ := vehicleAxes(vehicle.Heading, vehicle.Pitch, vehicle.Roll)
 	radius, halfSegment := bodyCapsuleDimensions(vehicle.Params)
-	base := geom.V3(vehicle.Position.X, vehicle.Height, vehicle.Position.Z)
-	center := base.Add(up.MulScalar(radius))
+	center := geom.V3(
+		vehicle.Position.X,
+		capsuleCenterHeight(vehicle.Height, radius, halfSegment, forward),
+		vehicle.Position.Z,
+	)
 	return bodyCapsule{
 		start:  center.Add(forward.MulScalar(halfSegment)),
 		end:    center.Sub(forward.MulScalar(halfSegment)),
 		radius: radius,
 	}
+}
+
+func capsuleCenterHeight(baseHeight, radius, halfSegment float32, forward geom.Vec3) float32 {
+	return baseHeight + radius + absf(forward.Y)*halfSegment
 }
 
 func bodyCapsuleDimensions(params VehicleParams) (float32, float32) {

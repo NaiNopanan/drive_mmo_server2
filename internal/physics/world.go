@@ -1,9 +1,6 @@
 package physics
 
-import (
-	"server2/internal/worldmesh"
-	"server2/pkg/geom"
-)
+import "server2/internal/worldmesh"
 
 // PhysicsWorld เป็น sandbox เรียบง่ายที่โฟกัสเฉพาะรถผู้เล่น 1 คัน
 type PhysicsWorld struct {
@@ -14,12 +11,11 @@ type PhysicsWorld struct {
 }
 
 func NewWorld(config WorldConfig) *PhysicsWorld {
-	spawnGroundHeight := querySpawnGroundHeight(config.StaticMesh, config.PlayerSpawn)
 	player := VehicleBody{
 		ID:           "player-1",
 		Position:     config.PlayerSpawn,
-		Height:       spawnGroundHeight + 3,
-		GroundHeight: spawnGroundHeight,
+		Height:       3,
+		GroundHeight: 0,
 		VerticalVel:  0,
 		SupportState: SupportStateFalling,
 		LastSafePos:  config.PlayerSpawn,
@@ -92,19 +88,4 @@ func snapshotFromVehicle(vehicle VehicleBody, isPlayer bool) VehicleSnapshot {
 	}
 
 	return snapshot
-}
-
-func querySpawnGroundHeight(staticMesh worldmesh.StaticMesh, spawn geom.PlanarVec) float32 {
-	if len(staticMesh.Triangles) == 0 {
-		return 0
-	}
-
-	originY := staticMesh.Max.Y + 8
-	maxDistance := (staticMesh.Max.Y - staticMesh.Min.Y) + 16
-	hit := staticMesh.RaycastDown(geom.V3(spawn.X, originY, spawn.Z), maxDistance)
-	if !hit.Hit {
-		return 0
-	}
-
-	return hit.Point.Y
 }
